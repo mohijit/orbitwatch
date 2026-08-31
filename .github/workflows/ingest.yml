@@ -1,0 +1,107 @@
+# Scheduled orbital element ingestion.
+#
+# RATE SAFETY
+# CelesTrak publishes GP data roughly every two hours and permits one download per
+# update cycle. A second request in the same cycle returns HTTP 403, and repeat
+# offenders are firewalled at the IP level — on shared runner IPs that would affect
+# unrelated GitHub users, so getting this wrong is not only our problem.
+#
+# The on-disk FetchGuard cannot help here: a runner starts with an empty disk every
+# time, so it would permit a fetch on every single run. What actually holds is the
+# durable guard in `ingestOrbitalElements`, which reads `provider_runs` from the shared
+# database and refuses a fetch inside the provider's interval — counting failed and
+# in-flight runs, not just successful ones, because a run that fetched and then failed
+# has still consumed the cycle.
+#
+# So this schedule is intentionally conservative AND the worker is independently safe.
+# Extra invocations report `skipped` without contacting the provider, which is why a
+# skip exits 0 rather than failing the job.
+#
+# SECRETS
+# Never triggered by `pull_request`, so a fork can never reach these. On a public
+# repository the logs are public: the worker prints host:port/db only, never a
+# connection string.
+
+name: Ingest orbital elements
+
+on:
+  schedule:
+    # Every three hours, comfortably outside CelesTrak's ~2h cycle plus our 10-minute
+    # margin. Cron is best-effort on GitHub and may run late; the durable guard means
+    # a late or doubled run is harmless.
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      group:
+        description: "CelesTrak group to ingest"
+        required: false
+        default: "active"
+
+# Never let two ingests overlap. The database lease would stop the second anyway, but
+# not queueing it at all is cheaper and clearer.
+concurrency:
+  group: ingest-elements
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    name: CelesTrak GP
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Skips scheduled runs on forks, which would have no secrets and would only ever
+    # produce noise.
+    if: github.repository == 'mohijit/orbitwatch'
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Fail early if the database secret is missing
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "DATABASE_URL is not configured as a repository secret."
+            echo "Ingestion writes to the durable store and to provider_runs, which is"
+            echo "also what enforces the provider rate policy across runs."
+            exit 1
+          fi
+
+      - name: Build
+        run: pnpm build
+
+      - name: Apply migrations
+        run: pnpm --filter @orbitwatch/database migrate
+
+      - name: Ingest
+        run: pnpm --filter @orbitwatch/worker ingest -- --group "${{ inputs.group || 'active' }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Ingestion"
+            echo
+            echo "Group: \`${{ inputs.group || 'active' }}\`"
+            echo "Result: \`${{ job.status }}\`"
+            echo
+            echo "A \`SKIPPED\` result is correct behaviour, not a failure: the durable"
+            echo "rate guard refused to contact the provider inside its update cycle."
+          } >> "$GITHUB_STEP_SUMMARY"

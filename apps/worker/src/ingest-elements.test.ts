@@ -65,6 +65,156 @@ describe("orbital element ingestion", () => {
     return new GuardedHttpClient(guard);
   };
 
+  describe("durable rate guard", () => {
+    /**
+     * These cover the failure the on-disk FetchGuard cannot: an ephemeral runner whose
+     * guard state is empty on every start. Without a database-backed check, a scheduled
+     * CI job would fetch CelesTrak on every run and breach their once-per-cycle policy.
+     */
+
+    it("refuses a second ingest inside the provider interval, even with a fresh guard", async () => {
+      const database = new InMemoryDatabase();
+
+      const first = await ingestOrbitalElements({
+        database,
+        http: clientReturning([ISS_GP]),
+        query: { kind: "GROUP", value: "active" },
+      });
+      expect(first.status).toBe("success");
+
+      // A brand-new guard with its own empty state file is exactly what a CI runner
+      // starts with. The disk guard would happily allow this fetch.
+      const freshStateDir = await mkdtemp(join(tmpdir(), "orbitwatch-fresh-"));
+      const freshGuard = new FetchGuard({ stateFile: join(freshStateDir, "guard.json") });
+      vi.stubGlobal("fetch", vi.fn(async () => jsonResponse([ISS_GP])));
+
+      const second = await ingestOrbitalElements({
+        database,
+        http: new GuardedHttpClient(freshGuard),
+        query: { kind: "GROUP", value: "active" },
+      });
+
+      expect(second.status).toBe("skipped");
+      expect(second.skippedReason).toMatch(/rate policy/);
+      // The decisive assertion: no request was issued despite the empty guard state.
+      expect(fetch).not.toHaveBeenCalled();
+
+      await rm(freshStateDir, { recursive: true, force: true });
+    });
+
+    it("counts a failed run against the interval", async () => {
+      const database = new InMemoryDatabase();
+
+      // A run that fetched and then failed has still consumed the provider's budget.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => jsonResponse([])),
+      );
+      const failed = await ingestOrbitalElements({
+        database,
+        http: new GuardedHttpClient(guard),
+        query: { kind: "GROUP", value: "active" },
+      });
+      expect(failed.status).toBe("failed");
+
+      const freshStateDir = await mkdtemp(join(tmpdir(), "orbitwatch-fresh2-"));
+      vi.stubGlobal("fetch", vi.fn(async () => jsonResponse([ISS_GP])));
+
+      const second = await ingestOrbitalElements({
+        database,
+        http: new GuardedHttpClient(
+          new FetchGuard({ stateFile: join(freshStateDir, "guard.json") }),
+        ),
+        query: { kind: "GROUP", value: "active" },
+      });
+
+      expect(second.status).toBe("skipped");
+      expect(fetch).not.toHaveBeenCalled();
+
+      await rm(freshStateDir, { recursive: true, force: true });
+    });
+
+    it("allows a fetch once the interval has elapsed", async () => {
+      const database = new InMemoryDatabase();
+
+      await ingestOrbitalElements({
+        database,
+        http: clientReturning([ISS_GP]),
+        query: { kind: "GROUP", value: "active" },
+      });
+
+      // CelesTrak GP: 2h10m. Three hours later the next cycle has been published.
+      const threeHoursLater = new Date(Date.now() + 3 * 3600_000);
+      const freshStateDir = await mkdtemp(join(tmpdir(), "orbitwatch-fresh3-"));
+      vi.stubGlobal("fetch", vi.fn(async () => jsonResponse([ISS_GP, HST_GP])));
+
+      const second = await ingestOrbitalElements({
+        database,
+        http: new GuardedHttpClient(
+          new FetchGuard({ stateFile: join(freshStateDir, "guard.json") }),
+        ),
+        query: { kind: "GROUP", value: "active" },
+        now: () => threeHoursLater,
+      });
+
+      expect(second.status).toBe("success");
+      expect(fetch).toHaveBeenCalled();
+
+      await rm(freshStateDir, { recursive: true, force: true });
+    });
+
+    it("keeps the interval separate per resource", async () => {
+      const database = new InMemoryDatabase();
+
+      await ingestOrbitalElements({
+        database,
+        http: clientReturning([ISS_GP]),
+        query: { kind: "GROUP", value: "active" },
+      });
+
+      // A different group is a different resource and a different budget.
+      const freshStateDir = await mkdtemp(join(tmpdir(), "orbitwatch-fresh4-"));
+      vi.stubGlobal("fetch", vi.fn(async () => jsonResponse([HST_GP])));
+
+      const other = await ingestOrbitalElements({
+        database,
+        http: new GuardedHttpClient(
+          new FetchGuard({ stateFile: join(freshStateDir, "guard.json") }),
+        ),
+        query: { kind: "GROUP", value: "stations" },
+      });
+
+      expect(other.status).toBe("success");
+
+      await rm(freshStateDir, { recursive: true, force: true });
+    });
+
+    it("releases the lease when it skips, so the next run is not blocked", async () => {
+      const database = new InMemoryDatabase();
+
+      await ingestOrbitalElements({
+        database,
+        http: clientReturning([ISS_GP]),
+        query: { kind: "GROUP", value: "active" },
+      });
+
+      await ingestOrbitalElements({
+        database,
+        http: clientReturning([ISS_GP]),
+        query: { kind: "GROUP", value: "active" },
+      });
+
+      // The skip path returns before the try/finally that normally releases the lease,
+      // so it has to release explicitly or ingestion wedges until the lease expires.
+      const lease = await database.leases.acquire(
+        "celestrak-gp:group-active",
+        "someone-else",
+        60,
+      );
+      expect(lease).toBeDefined();
+    });
+  });
+
   it("stores elements and records a successful run", async () => {
     const database = new InMemoryDatabase();
     const result = await ingestOrbitalElements({
@@ -256,7 +406,7 @@ describe("orbital element ingestion", () => {
     expect(result.errorSummary).toMatch(/PROVIDER REFUSED/);
   });
 
-  it("skips when the fetch guard says the cycle is already downloaded", async () => {
+  it("skips a repeat download within the provider's update cycle", async () => {
     const database = new InMemoryDatabase();
     const query = { kind: "GROUP", value: "active" } as const;
 
@@ -268,7 +418,11 @@ describe("orbital element ingestion", () => {
     });
 
     expect(second.status).toBe("skipped");
-    expect(second.skippedReason).toMatch(/already fetched this cycle/);
+    // Two guards can stop this, and the durable one is checked first: it is the only
+    // one that also holds on an ephemeral runner. The on-disk FetchGuard remains the
+    // backstop for callers outside ingestion, and has its own tests in
+    // @orbitwatch/providers. What matters here is that the request does not go out.
+    expect(second.skippedReason).toMatch(/rate policy|already fetched this cycle/);
   });
 
   it("skips when another worker holds the lease", async () => {

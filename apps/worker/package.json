@@ -8,7 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "vitest run",
-    "start": "tsx src/main.ts",
+    "start": "tsx src/cli.ts",
     "ingest": "tsx src/cli.ts",
     "clean": "rimraf dist .turbo"
   },

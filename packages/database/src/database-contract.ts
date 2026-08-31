@@ -597,6 +597,52 @@ export function runDatabaseContractTests(
         ).toBe(partial);
       });
 
+      it("counts a failed run as an upstream attempt", async () => {
+        // The distinction that keeps us inside a provider's rate policy: a run that
+        // fetched and then failed while storing HAS consumed the once-per-cycle budget.
+        // Asking only "when did we last succeed?" would permit an immediate re-fetch.
+        const runId = await db.providerRuns.start("celestrak-gp", "group-active");
+        await db.providerRuns.finish(runId, { status: "failed" });
+
+        expect((await db.providerRuns.latestAttempt("celestrak-gp", "group-active"))?.id).toBe(
+          runId,
+        );
+        expect(
+          await db.providerRuns.latestSuccessfulRun("celestrak-gp", "group-active"),
+        ).toBeUndefined();
+      });
+
+      it("does not count a skipped run as an upstream attempt", async () => {
+        // "skipped" is the only status that guarantees no request left the process, so
+        // it must not push the next allowed fetch further out.
+        const runId = await db.providerRuns.start("celestrak-gp", "group-active");
+        await db.providerRuns.finish(runId, { status: "skipped" });
+
+        expect(
+          await db.providerRuns.latestAttempt("celestrak-gp", "group-active"),
+        ).toBeUndefined();
+      });
+
+      it("counts a still-running run as an attempt", async () => {
+        // Either a request is in flight or a worker crashed mid-run. Both must hold the
+        // budget: losing one cycle of freshness beats risking an IP-level block.
+        const runId = await db.providerRuns.start("celestrak-gp", "group-active");
+
+        expect((await db.providerRuns.latestAttempt("celestrak-gp", "group-active"))?.id).toBe(
+          runId,
+        );
+      });
+
+      it("keeps attempts separate per resource", async () => {
+        const runId = await db.providerRuns.start("celestrak-gp", "group-active");
+        await db.providerRuns.finish(runId, { status: "success" });
+
+        // Fetching the active group must not consume the budget for another group.
+        expect(
+          await db.providerRuns.latestAttempt("celestrak-gp", "group-starlink"),
+        ).toBeUndefined();
+      });
+
       it("returns undefined when a provider has never succeeded", async () => {
         const runId = await db.providerRuns.start("satnogs", "transmitters");
         await db.providerRuns.finish(runId, { status: "failed" });

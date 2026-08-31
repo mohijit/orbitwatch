@@ -671,6 +671,21 @@ function createProviderRunRepository(sql: Sql): ProviderRunRepository {
       return rows.map((row) => mapProviderRun(row as Record<string, unknown>));
     },
 
+    async latestAttempt(provider, resource) {
+      // Everything except "skipped": see the interface for why a failed run still
+      // counts against the provider's rate budget.
+      const rows = await sql`
+        SELECT ${sql.unsafe(PROVIDER_RUN_COLUMNS)}
+        FROM provider_runs
+        WHERE provider = ${provider} AND resource = ${resource}
+          AND status <> 'skipped'
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+      `;
+      const row = rows[0];
+      return row === undefined ? undefined : mapProviderRun(row as Record<string, unknown>);
+    },
+
     async latestSuccessfulRun(provider, resource) {
       // "partial" counts as good: some data landed, so a last-known-good state exists.
       const rows = await sql`

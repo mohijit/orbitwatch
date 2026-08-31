@@ -172,6 +172,28 @@ export interface ProviderRunRepository {
     provider: string,
     resource: string,
   ): Promise<ProviderRunRecord | undefined>;
+
+  /**
+   * Most recent run that may have issued an upstream request.
+   *
+   * Distinct from `latestSuccessfulRun`, and the difference is what keeps us inside a
+   * provider's rate policy. A run that fetched successfully and then failed while
+   * storing has still consumed the provider's once-per-cycle budget, so asking "when
+   * did we last succeed?" would permit an immediate re-fetch and earn an HTTP 403.
+   *
+   * Only `skipped` guarantees no request was made, so every other status counts —
+   * including `running`, which may be a request in flight or a crashed worker. Treating
+   * a crashed run as having consumed the budget is the fail-closed direction: we lose
+   * one cycle of freshness rather than risk an IP-level block.
+   *
+   * This is the durable, SHARED counterpart to the on-disk FetchGuard. The guard is
+   * per-machine, which is worthless on ephemeral CI runners that start with an empty
+   * disk every time; this survives because the database does.
+   */
+  latestAttempt(
+    provider: string,
+    resource: string,
+  ): Promise<ProviderRunRecord | undefined>;
 }
 
 /**

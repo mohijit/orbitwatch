@@ -316,6 +316,17 @@ export class InMemoryDatabase implements Database {
         return [...latest.values()];
       },
 
+      async latestAttempt(provider, resource) {
+        let best: ProviderRunRecord | undefined;
+        for (const run of runs) {
+          if (run.provider !== provider || run.resource !== resource) continue;
+          // Only "skipped" proves no request was issued; everything else may have.
+          if (run.status === "skipped") continue;
+          if (best === undefined || isLaterRun(run, best)) best = run;
+        }
+        return best;
+      },
+
       async latestSuccessfulRun(provider, resource) {
         let best: ProviderRunRecord | undefined;
         for (const run of runs) {

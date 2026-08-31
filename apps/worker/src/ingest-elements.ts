@@ -13,6 +13,7 @@ import {
   buildGpUrl,
   gpResourceKey,
   parseGpResponse,
+  policyFor,
   type CelestrakGpQuery,
   type GuardedHttpClient,
   type ProviderRefusedError,
@@ -108,6 +109,39 @@ export async function ingestOrbitalElements(
   if (lease === undefined) {
     logger.info("Ingestion skipped: another worker holds the lease", { leaseKey });
     return skipped("another worker holds the lease", startedAt, now);
+  }
+
+  // --- RATE POLICY (durable) ----------------------------------------------
+  // The on-disk FetchGuard protects a long-lived machine. It cannot protect an
+  // ephemeral one: a CI runner starts with an empty disk every time, so the guard
+  // would permit a fetch on every scheduled run and we would breach CelesTrak's
+  // one-download-per-cycle policy within hours. Because CI runners share IP ranges,
+  // being firewalled would harm unrelated users of that infrastructure too.
+  //
+  // provider_runs is durable and shared, so it is the state that actually survives.
+  // Checked BEFORE the run row is created, or the check would see its own row and
+  // conclude an attempt was already in progress.
+  const policy = policyFor(provider);
+  const lastAttempt = await database.providerRuns.latestAttempt(provider, resource);
+
+  if (lastAttempt !== undefined) {
+    const elapsedMs = now().getTime() - lastAttempt.startedAt.getTime();
+    if (elapsedMs < policy.minIntervalMs) {
+      const remainingMinutes = Math.ceil((policy.minIntervalMs - elapsedMs) / 60_000);
+      const reason =
+        `provider rate policy: last attempt ${Math.floor(elapsedMs / 60_000)} min ago, ` +
+        `next allowed in ${remainingMinutes} min`;
+
+      logger.info("Ingestion skipped by durable rate guard", {
+        provider,
+        resource,
+        reason,
+      });
+
+      // Released explicitly: the finally below belongs to a try we have not entered.
+      await database.leases.release(leaseKey, holder);
+      return skipped(reason, startedAt, now);
+    }
   }
 
   const runId = await database.providerRuns.start(provider, resource);

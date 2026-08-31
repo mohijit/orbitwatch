@@ -1,0 +1,92 @@
+# The four gates, on every push and pull request.
+#
+# No secrets are used here on purpose. A fork's pull request must be able to run the
+# full suite, and on a public repository anything that needs a credential is also
+# something an untrusted PR must not be able to reach.
+#
+# The storage contract therefore runs against the in-memory implementation only. The
+# Postgres half runs in `verify-postgres.yml`, which is not triggered by pull requests.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push makes an in-flight run obsolete. Cancelling keeps the queue honest.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: typecheck · lint · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  browser:
+    name: Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @orbitwatch/web exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm build
+
+      # The globe is the one part that cannot be trusted to a type checker: the
+      # Turbopack/Cesium failure in M0 built cleanly and then hung at runtime with no
+      # stack trace. It was only ever caught by loading the page in a real browser.
+      - name: Browser tests
+        run: pnpm --filter @orbitwatch/web exec playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7

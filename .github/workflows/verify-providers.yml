@@ -1,0 +1,155 @@
+# Capture real provider responses from an environment that can actually reach them.
+#
+# WHY THIS EXISTS
+# CelesTrak and SatNOGS are unreachable from the development network — CelesTrak's TCP
+# connect never completes, SatNOGS completes TLS and then returns no bytes. Their
+# schemas are therefore written from documentation and marked UNVERIFIED, and no
+# fixture has been fabricated to paper over it. A GitHub runner has ordinary internet
+# access, so it can obtain the genuine responses the verification gate requires.
+#
+# MANUAL ONLY, DELIBERATELY
+# Never scheduled. CelesTrak permits one download per ~2h update cycle; a second
+# request in the same cycle returns HTTP 403 and repeat offenders are firewalled at the
+# IP level. Runner IPs are shared with every other GitHub user, so an automated loop
+# here would risk getting ranges blocked for people who have nothing to do with this
+# project. A human decides when this runs.
+#
+# The script itself makes at most one request per provider resource, through the same
+# FetchGuard production ingestion uses.
+#
+# OUTPUT
+# Captured fixtures are uploaded as an artifact and proposed as a pull request. They
+# are never pushed straight to main: a fixture is evidence, and evidence gets reviewed
+# before it becomes the thing tests trust.
+
+name: Verify providers
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Provider filter (blank = all). e.g. celestrak, satnogs"
+        required: false
+        default: ""
+      open_pull_request:
+        description: "Open a PR with any captured fixtures"
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  group: verify-providers
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  verify:
+    name: Guarded live provider requests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Show egress IP
+        # Recorded so that if a provider does block us we can say from where. The
+        # runner's public IP is not a secret.
+        run: curl -s --max-time 10 https://api.ipify.org || echo "(unavailable)"
+
+      - name: Verify providers
+        id: verify
+        # Non-fatal: a refusal is a result worth recording, not a broken build. The
+        # step summary and the fixtures carry the outcome.
+        continue-on-error: true
+        run: pnpm verify:providers ${{ inputs.provider }}
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "## Provider verification"
+            echo
+            echo "Filter: \`${{ inputs.provider || 'all' }}\`"
+            echo "Result: \`${{ steps.verify.outcome }}\`"
+            echo
+            echo "### Fixture directory after the run"
+            echo '```'
+            ls -la fixtures/ 2>/dev/null || echo "(no fixtures directory)"
+            echo '```'
+            echo
+            echo "### Changed files"
+            echo '```'
+            git status --porcelain
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload captured fixtures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-fixtures
+          path: |
+            fixtures/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Check for changes
+        id: changes
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain fixtures/)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Propose fixtures as a pull request
+        if: steps.changes.outputs.changed == 'true' && inputs.open_pull_request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          add-paths: fixtures/
+          branch: fixtures/provider-verification
+          commit-message: |
+            Capture real provider responses from CI
+
+            Obtained from a GitHub runner, which unlike the development network can
+            reach these providers. Each response came through the standard FetchGuard,
+            one request per resource.
+
+            Review before merging: verify the Zod schemas against these responses
+            rather than editing the responses to fit the schemas, add parsing tests
+            built from them, and update the verification registry in
+            packages/providers/src/verification.ts. Only then is a provider VERIFIED.
+          title: "Provider fixtures captured from CI"
+          body: |
+            Real production responses captured by the **Verify providers** workflow.
+
+            Filter: `${{ inputs.provider || 'all' }}`
+
+            ### Before merging
+
+            - [ ] Confirm no credentials, tokens, cookies, request IDs or other
+                  identifying metadata are present in any fixture
+            - [ ] Validate the existing Zod schemas against these responses **without
+                  modifying the responses to fit**
+            - [ ] Note any documentation/reality mismatches in the schema comments
+            - [ ] Add parsing tests built from the fixtures
+            - [ ] Update `fixtures/manifest.json` provenance
+            - [ ] Update `packages/providers/src/verification.ts`
+
+            A successful request alone is **not** verification. All of the above is the gate.
+          labels: provider-verification
+          delete-branch: true
