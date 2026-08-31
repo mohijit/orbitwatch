@@ -75,14 +75,27 @@
       "truncated": false,
       "capturedFrom": "GitHub Actions runner.",
       "notes": "Absent values are EMPTY STRINGS, not null: DECAY_DATE and DATA_STATUS_CODE both arrive as \"\". OBJECT_TYPE is the short code PAY; OPS_STATUS_CODE is +."
-    }
-  ],
-  "blocked": [
+    },
     {
+      "file": "satnogs-satellite-iss.json",
+      "provider": "satnogs-db",
+      "endpoint": "https://db.satnogs.org/api/satellites/?norad_cat_id=25544&format=json",
+      "retrievedAt": "2026-08-31T15:44:15.305Z",
+      "purpose": "Verify the satellite record shape and the sat_id/norad_cat_id linkage.",
+      "truncated": false,
+      "capturedFrom": "GitHub Actions runner; db.satnogs.org completes TLS and returns no bytes from the development network.",
+      "notes": "sat_id is SatNOGS's own opaque id, not the NORAD number. status is a free-form string (\"in orbit\" observed, not just alive/dead/future/re-entered)."
+    },
+    {
+      "file": "satnogs-transmitters-iss.json",
       "provider": "satnogs-db",
       "endpoint": "https://db.satnogs.org/api/transmitters/?satellite__norad_cat_id=25544&format=json",
-      "status": "BLOCKED",
-      "reason": "TCP connect and TLS handshake both succeed (~0.6s), then the server returns no bytes before timeout. Reproduced on the cheapest endpoint (/api/modes/) so it is not query cost. No credentials required by this API."
+      "retrievedAt": "2026-08-31T15:44:15.083Z",
+      "purpose": "Verify transmitter schema: downlink/uplink, mode, baud, status.",
+      "truncated": false,
+      "capturedFrom": "GitHub Actions runner.",
+      "notes": "50 transmitters for the ISS. Many numeric fields (uplink_high, baud, norad_follow_id) are legitimately null. status is lowercase active/inactive, separate from the alive boolean."
     }
-  ]
+  ],
+  "blocked": []
 }

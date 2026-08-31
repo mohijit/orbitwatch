@@ -112,16 +112,15 @@ reference data, so the test cannot pass by agreeing with itself.
 | Launch Library 2 | Launches (list + detailed) | ✅ Yes |
 | WhereTheISS.at | Independent ISS cross-check only | ✅ Yes |
 | CelesTrak | Primary orbital elements + catalog | ✅ Yes — verified from CI |
-| **SatNOGS DB** | **Transmitters** | ❌ **No — network-blocked** |
+| SatNOGS DB | Transmitters | ✅ Yes — verified from CI |
 
 A provider counts as verified only after real production calls, captured fixtures,
 schemas validated against those responses, and parsing tests built from them.
 
-CelesTrak and SatNOGS are unreachable from the current development network — CelesTrak's
-TCP connect never completes, SatNOGS completes TLS then returns no bytes. Their schemas
-are written from documentation and **explicitly marked UNVERIFIED** in the source, the
-ADRs and [`fixtures/manifest.json`](fixtures/manifest.json). **No fixture has been
-fabricated**, and no substitute primary provider has been introduced.
+Both were unreachable from the local development network (CelesTrak: TCP connect never
+completes; SatNOGS: TLS completes, then zero bytes) — solved by verifying from a GitHub
+Actions runner instead, which has ordinary internet access. See
+[`.github/workflows/verify-providers.yml`](.github/workflows/verify-providers.yml).
 
 Fixture provenance — endpoint, retrieval timestamp, purpose and known quirks — is
 recorded in `fixtures/manifest.json`.

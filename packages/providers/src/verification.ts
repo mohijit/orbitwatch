@@ -68,12 +68,12 @@ export const PROVIDER_VERIFICATION: Readonly<Record<ProviderId, ProviderVerifica
     endpoint: "https://celestrak.org/satcat/records.php?CATNR=25544&FORMAT=json",
     verifiedAt: "2026-08-31T15:42:55.431Z",
   },
+  // Unreachable from the development network (TLS completes, then zero bytes before
+  // timeout), so verified from CI instead. See .github/workflows/verify-providers.yml.
   "satnogs-db": {
-    status: "BLOCKED",
-    endpoint: "https://db.satnogs.org/api/transmitters/",
-    reason:
-      "TCP connect and TLS handshake succeed, then the server returns no bytes before " +
-      "timeout. Reproduced on the cheapest available endpoint.",
+    status: "VERIFIED",
+    endpoint: "https://db.satnogs.org/api/transmitters/?satellite__norad_cat_id=25544",
+    verifiedAt: "2026-08-31T15:44:15.305Z",
   },
 
   // Not yet attempted. These belong to milestones that have not started, and a request

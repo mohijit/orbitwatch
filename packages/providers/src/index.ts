@@ -39,3 +39,6 @@ export * from "./schemas/wheretheiss.js";
 
 // CelesTrak schemas. NOT verified against a live response — see the file header.
 export * from "./schemas/celestrak.js";
+
+// SatNOGS DB. VERIFIED — see schemas/satnogs.ts.
+export * from "./schemas/satnogs.js";
