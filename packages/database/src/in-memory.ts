@@ -75,7 +75,9 @@ export class InMemoryDatabase implements Database {
         return store.get(catalogId);
       },
       async findMany(filter) {
-        const all = [...store.values()].filter((record) => matchesSatelliteFilter(record, filter));
+        const all = [...store.values()].filter((record) =>
+          matchesSatelliteFilter(record, filter),
+        );
         // Stable ordering so pagination cannot repeat or skip rows.
         all.sort((a, b) => a.catalogId.localeCompare(b.catalogId));
         const offset = filter.offset ?? 0;
@@ -83,7 +85,9 @@ export class InMemoryDatabase implements Database {
         return all.slice(offset, offset + limit);
       },
       async count(filter) {
-        return [...store.values()].filter((record) => matchesSatelliteFilter(record, filter)).length;
+        return [...store.values()].filter((record) =>
+          matchesSatelliteFilter(record, filter),
+        ).length;
       },
       async upsertMany(records) {
         let changed = 0;
@@ -158,7 +162,8 @@ export class InMemoryDatabase implements Database {
         for (const row of rows) {
           if (row.catalogId !== query.catalogId) continue;
           if (row.epoch.getTime() > target) continue;
-          if (best === undefined || row.epoch.getTime() > best.epoch.getTime()) best = row;
+          if (best === undefined || row.epoch.getTime() > best.epoch.getTime())
+            best = row;
         }
         // Deliberately no fallback to a later set here. The caller decides whether
         // propagating backwards is acceptable, and orbit-core marks it down when it is.
@@ -212,7 +217,10 @@ export class InMemoryDatabase implements Database {
         const newestIdByCatalog = new Map<CatalogId, OrbitalElementRecord>();
         for (const row of rows) {
           const incumbent = newestIdByCatalog.get(row.catalogId);
-          if (incumbent === undefined || row.epoch.getTime() > incumbent.epoch.getTime()) {
+          if (
+            incumbent === undefined ||
+            row.epoch.getTime() > incumbent.epoch.getTime()
+          ) {
             newestIdByCatalog.set(row.catalogId, row);
           }
         }

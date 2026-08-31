@@ -42,6 +42,20 @@ type Fragment = ReturnType<Sql>;
 /** Rows per write statement. Keeps parameter counts and lock durations bounded. */
 const WRITE_CHUNK_SIZE = 500;
 
+/** The parameter type postgres.js accepts for a JSON value. */
+type JsonParameter = Parameters<Sql["json"]>[0];
+
+/**
+ * Widen a row array for `sql.json`.
+ *
+ * postgres.js types its JSON parameter as an index-signature object, which a precise
+ * object-literal type does not satisfy even though it is plain JSON at runtime. The
+ * cast is confined to this one place rather than repeated at every call site.
+ */
+function jsonRows(rows: readonly Record<string, unknown>[]): JsonParameter {
+  return rows as unknown as JsonParameter;
+}
+
 /** Escape character for ILIKE patterns. Not a backslash, so nothing depends on the
  *  server's `standard_conforming_strings` setting. */
 const LIKE_ESCAPE = "!";
@@ -269,10 +283,14 @@ function createSatelliteRepository(sql: Sql): SatelliteRepository {
     const conditions: Fragment[] = [];
 
     if (filter.objectTypes !== undefined) {
-      conditions.push(sql`${column("object_type")} = ANY(${sql.array([...filter.objectTypes])})`);
+      conditions.push(
+        sql`${column("object_type")} = ANY(${sql.array([...filter.objectTypes])})`,
+      );
     }
     if (filter.orbitClasses !== undefined) {
-      conditions.push(sql`${column("orbit_class")} = ANY(${sql.array([...filter.orbitClasses])})`);
+      conditions.push(
+        sql`${column("orbit_class")} = ANY(${sql.array([...filter.orbitClasses])})`,
+      );
     }
     if (filter.owners !== undefined) {
       conditions.push(sql`${column("owner")} = ANY(${sql.array([...filter.owners])})`);
@@ -338,27 +356,32 @@ function createSatelliteRepository(sql: Sql): SatelliteRepository {
       let changed = 0;
 
       for (const batch of chunk(records, WRITE_CHUNK_SIZE)) {
-        const payload = JSON.stringify(
-          batch.map((record) => ({
-            catalog_id: record.catalogId,
-            name: record.name,
-            international_designator: record.internationalDesignator ?? null,
-            object_type: record.objectType,
-            operational_status: record.operationalStatus ?? null,
-            owner: record.owner ?? null,
-            launch_date: toDateOnly(record.launchDate) ?? null,
-            launch_site: record.launchSite ?? null,
-            decay_date: toDateOnly(record.decayDate) ?? null,
-            period_minutes: record.periodMinutes ?? null,
-            inclination_degrees: record.inclinationDegrees ?? null,
-            apogee_km: record.apogeeKm ?? null,
-            perigee_km: record.perigeeKm ?? null,
-            rcs_square_metres: record.rcsSquareMetres ?? null,
-            orbit_class: record.orbitClass ?? null,
-            metadata: record.metadata,
-            source_provider: record.sourceProvider,
-            updated_at: record.updatedAt.toISOString(),
-          })),
+        // NOT JSON.stringify: postgres.js encodes a json parameter itself, so passing a
+        // pre-stringified value double-encodes it and the server receives a scalar
+        // string rather than an array. sql.json() marks the value explicitly.
+        const payload = sql.json(
+          jsonRows(
+            batch.map((record) => ({
+              catalog_id: record.catalogId,
+              name: record.name,
+              international_designator: record.internationalDesignator ?? null,
+              object_type: record.objectType,
+              operational_status: record.operationalStatus ?? null,
+              owner: record.owner ?? null,
+              launch_date: toDateOnly(record.launchDate) ?? null,
+              launch_site: record.launchSite ?? null,
+              decay_date: toDateOnly(record.decayDate) ?? null,
+              period_minutes: record.periodMinutes ?? null,
+              inclination_degrees: record.inclinationDegrees ?? null,
+              apogee_km: record.apogeeKm ?? null,
+              perigee_km: record.perigeeKm ?? null,
+              rcs_square_metres: record.rcsSquareMetres ?? null,
+              orbit_class: record.orbitClass ?? null,
+              metadata: record.metadata,
+              source_provider: record.sourceProvider,
+              updated_at: record.updatedAt.toISOString(),
+            })),
+          ),
         );
 
         // The `changed` CTE reads `satellites` in the same snapshot as the INSERT, so it
@@ -544,21 +567,25 @@ function createElementRepository(sql: Sql): OrbitalElementRepository {
       let inserted = 0;
 
       for (const batch of chunk(records, WRITE_CHUNK_SIZE)) {
-        const payload = JSON.stringify(
-          batch.map((record) => ({
-            catalog_id: record.catalogId,
-            provider: record.provider,
-            format: record.format,
-            epoch: record.epoch.toISOString(),
-            retrieved_at: record.retrievedAt.toISOString(),
-            omm: record.omm,
-            tle_line_1: record.tleLine1 ?? null,
-            tle_line_2: record.tleLine2 ?? null,
-            mean_motion: record.meanMotion,
-            eccentricity: record.eccentricity,
-            inclination: record.inclination,
-            bstar: record.bstar ?? null,
-          })),
+        // See upsertMany: sql.json() rather than JSON.stringify, or the parameter is
+        // double-encoded and arrives as a scalar.
+        const payload = sql.json(
+          jsonRows(
+            batch.map((record) => ({
+              catalog_id: record.catalogId,
+              provider: record.provider,
+              format: record.format,
+              epoch: record.epoch.toISOString(),
+              retrieved_at: record.retrievedAt.toISOString(),
+              omm: record.omm,
+              tle_line_1: record.tleLine1 ?? null,
+              tle_line_2: record.tleLine2 ?? null,
+              mean_motion: record.meanMotion,
+              eccentricity: record.eccentricity,
+              inclination: record.inclination,
+              bstar: record.bstar ?? null,
+            })),
+          ),
         );
 
         // DO NOTHING on the (catalog_id, provider, epoch) unique constraint. Re-ingesting
@@ -655,7 +682,9 @@ function createProviderRunRepository(sql: Sql): ProviderRunRepository {
         LIMIT 1
       `;
       const row = rows[0];
-      return row === undefined ? undefined : mapProviderRun(row as Record<string, unknown>);
+      return row === undefined
+        ? undefined
+        : mapProviderRun(row as Record<string, unknown>);
     },
   };
 }

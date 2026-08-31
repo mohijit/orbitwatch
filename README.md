@@ -10,18 +10,19 @@ Real-time satellite tracking for web, PWA, iOS and Android.
 
 ## Status
 
-Under active development, built milestone by milestone. **M0 and M1 are complete; M2 is
-partially complete.** Nothing here is production-deployed.
+Under active development, built milestone by milestone. **M0, M1 and the backend half
+of M2 are complete.** Nothing here is production-deployed.
 
 | Milestone | Scope | Status |
 |---|---|---|
 | M0 | Architecture validation, renderer proofs of concept, benchmarks | ✅ Complete |
 | M1 | Shared orbital core | ✅ Complete |
-| M2 | Backend: storage, cache, ingestion, API | 🟡 In progress |
+| M2 | Backend: storage, cache, ingestion, API | 🟡 In progress — storage and API done, live ingestion blocked on CelesTrak |
 | M3–M10 | Web MVP, observer tools, native apps, data richness, production | ⬜ Not started |
 
-**Verification:** typecheck (13 packages) · lint (13) · **296 unit tests** · build (7) ·
-4 Playwright browser tests — all passing.
+**Verification:** typecheck (14 packages) · lint (14) · **403 unit tests** · build (8) ·
+4 Playwright browser tests — all passing. A further **41 storage-contract tests run
+against real PostgreSQL 17.6** when a throwaway database is configured (see below).
 
 ---
 
@@ -59,14 +60,22 @@ apps/
   web       Next.js 16 + CesiumJS globe
   mobile    Expo / React Native, Cesium in a WebView (ADR 0003)
   worker    Scheduled provider ingestion
-  api       Fastify service                              (M2, in progress)
+  api       Fastify service: catalog, elements, health, provider status
 packages/
   orbit-core   SGP4/SDP4, coordinates, passes, illumination — framework-free
-  providers    Guarded HTTP access + provider schemas
-  contracts    Shared typed contracts, incl. the WebView bridge protocol
-  database     Schema, migrations, repositories
+  providers    Guarded HTTP access, provider schemas, verification registry
+  contracts    Shared typed contracts: HTTP API + the WebView bridge protocol
+  database     Schema, migrations, repositories (Postgres + in-memory)
   cache        Layered L1 + optional shared L2
 ```
+
+### Two implementations, one contract
+
+`packages/database` ships **two** complete implementations of its repository interfaces:
+Postgres and in-memory. Both are run against the same executable specification in
+`database-contract.ts`, so the in-memory one is a genuine second implementation rather
+than a mock that happens to satisfy the type signature. Business logic is tested at
+speed against it with no credentials, and the SQL only has to prove it agrees.
 
 `packages/orbit-core` has no React, DOM, Cesium or React Native dependency — enforced by
 a lint rule with a test proving it fires. Web, native, worker and server all run the same
@@ -167,6 +176,54 @@ pnpm --filter @orbitwatch/contracts bench    # WebView bridge payload cost
 pnpm --filter @orbitwatch/web exec playwright test
 ```
 
+### Database
+
+```bash
+pnpm --filter @orbitwatch/database exec tsx src/cli/check-connection.ts   # diagnose
+pnpm --filter @orbitwatch/database migrate                               # apply schema
+```
+
+Migrations are checksum-verified: editing an already-applied migration fails loudly
+rather than leaving environments with a schema that no longer matches its source. Each
+runs in its own transaction, and an advisory lock serialises concurrent deploys.
+
+### Running the storage contract against real Postgres
+
+The Postgres suite **truncates every table**, so it refuses `DATABASE_URL` and requires
+a separate variable pointing at a database that exists to be destroyed:
+
+```bash
+ORBITWATCH_TEST_DATABASE_URL=postgresql://... pnpm --filter @orbitwatch/database test
+```
+
+Without it the suite skips. `pnpm test` must never be able to destroy working data
+because the ambient environment happened to be configured.
+
+### API
+
+```bash
+pnpm --filter @orbitwatch/api dev       # http://localhost:3333
+```
+
+| Route | Purpose |
+|---|---|
+| `GET /health` | Dependency status. Always 200 — the body carries the truth |
+| `GET /health/ready` | Readiness; 503 only when the database is unreachable |
+| `GET /satellites` | Search and filter the catalog |
+| `GET /satellites/:id` | One catalog record |
+| `GET /satellites/:id/elements` | Elements for an instant, with accuracy assessment |
+| `GET /satellites/:id/elements/history` | Stored element history |
+| `GET /catalog/elements` | Current elements for the whole catalog |
+| `GET /providers/status` | Ingestion freshness per provider |
+| `GET /providers/verification` | Which provider schemas have met real data |
+
+The API serves **elements, not positions**. Clients propagate locally with the same
+`orbit-core` the server uses, which is what makes smooth animation possible without the
+server computing positions at frame rate — and what makes web and native agree.
+
+With no `DATABASE_URL` set the API starts against the in-memory database and says so
+loudly at boot, so an unexpected ephemeral deployment is noticed immediately.
+
 ### Provider verification
 
 ```bash
@@ -187,6 +244,17 @@ Variables prefixed `NEXT_PUBLIC_` or `EXPO_PUBLIC_` are embedded in client bundl
 are readable by anyone. **Never put a secret in one.** Everything else is server-only.
 `DATABASE_URL` should be Supabase's pooled connection string; `DATABASE_DIRECT_URL` the
 direct one, because migrations issue DDL that the transaction pooler does not support.
+
+**On an IPv4-only network, use the Session pooler string for both.** Supabase's direct
+connection hosts (`db.<ref>.supabase.co`) publish an AAAA record only, so they fail with
+`ENOTFOUND` — which looks like a wrong hostname but is an address-family mismatch. The
+Session pooler is IPv4 and supports DDL, so migrations work over it.
+
+```bash
+pnpm --filter @orbitwatch/database exec tsx src/cli/check-connection.ts
+```
+
+reports host, port and DDL support for each configured URL, printing no credentials.
 
 ---
 

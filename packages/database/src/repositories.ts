@@ -130,12 +130,7 @@ export interface OrbitalElementRepository {
   }): Promise<number>;
 }
 
-export type ProviderRunStatus =
-  | "running"
-  | "success"
-  | "partial"
-  | "failed"
-  | "skipped";
+export type ProviderRunStatus = "running" | "success" | "partial" | "failed" | "skipped";
 
 export interface ProviderRunRecord {
   readonly id: string;

@@ -77,7 +77,9 @@ describe("loadMigrations", () => {
       "README.md": "not a migration",
     });
 
-    expect((await loadMigrations(directory)).map((m) => m.version)).toEqual(["0001_first"]);
+    expect((await loadMigrations(directory)).map((m) => m.version)).toEqual([
+      "0001_first",
+    ]);
   });
 
   it("rejects an unnumbered migration", async () => {

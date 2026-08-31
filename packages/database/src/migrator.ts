@@ -81,7 +81,9 @@ export function checksumMigration(sql: string): string {
 export async function loadMigrations(
   directory: string = defaultMigrationsDirectory(),
 ): Promise<readonly Migration[]> {
-  const entries = (await readdir(directory)).filter((name) => name.endsWith(".sql")).sort();
+  const entries = (await readdir(directory))
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
 
   const migrations: Migration[] = [];
   for (const entry of entries) {
@@ -156,7 +158,9 @@ export async function runMigrations(
       const recorded = await sql<{ version: string; checksum: string }[]>`
         SELECT version, checksum FROM schema_migrations
       `;
-      const checksumByVersion = new Map(recorded.map((row) => [row.version, row.checksum]));
+      const checksumByVersion = new Map(
+        recorded.map((row) => [row.version, row.checksum]),
+      );
 
       const applied: string[] = [];
       const alreadyApplied: string[] = [];

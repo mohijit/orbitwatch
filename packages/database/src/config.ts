@@ -36,7 +36,13 @@ const databaseConfigSchema = z.object({
    * Falls back to DATABASE_URL when unset, which is correct for a local Postgres but
    * wrong for Supabase's transaction pooler, where DDL needs a session connection.
    */
-  DATABASE_DIRECT_URL: z.string().optional(),
+  DATABASE_DIRECT_URL: z.preprocess(
+    // An empty variable means "not set". Without this, migrationConnectionString would
+    // return "" instead of falling back to DATABASE_URL, because ?? only catches
+    // undefined — and migrations would fail with an unhelpful parse error.
+    (value) => (value === "" ? undefined : value),
+    z.string().optional(),
+  ),
 
   /** Maximum pool size. Kept low by default: Supabase free tier limits connections. */
   DATABASE_POOL_MAX: z.coerce.number().int().positive().max(100).default(10),
@@ -73,9 +79,7 @@ export class ConfigurationError extends Error {
  * The error message names the missing variables but never echoes any value, so a
  * startup failure in a shared log does not leak a password that was merely malformed.
  */
-export function loadDatabaseConfig(
-  env: NodeJS.ProcessEnv = process.env,
-): DatabaseConfig {
+export function loadDatabaseConfig(env: NodeJS.ProcessEnv = process.env): DatabaseConfig {
   const parsed = databaseConfigSchema.safeParse(env);
 
   if (!parsed.success) {

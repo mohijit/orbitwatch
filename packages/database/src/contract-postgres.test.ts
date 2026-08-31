@@ -25,10 +25,8 @@ const TABLES = ["orbital_elements", "satellites", "provider_runs", "ingestion_le
 
 if (TEST_URL === undefined || TEST_URL === "") {
   describe("storage contract: PostgresDatabase", () => {
-    it.skip(
-      "requires ORBITWATCH_TEST_DATABASE_URL (destructive; must not be a real database)",
-      () => undefined,
-    );
+    it.skip("requires ORBITWATCH_TEST_DATABASE_URL (destructive; must not be a real database)", () =>
+      undefined);
   });
 } else {
   runDatabaseContractTests("PostgresDatabase", async () => {
@@ -54,9 +52,7 @@ if (TEST_URL === undefined || TEST_URL === "") {
     return {
       database,
       async reset() {
-        await admin.unsafe(
-          `TRUNCATE ${TABLES.join(", ")} RESTART IDENTITY CASCADE`,
-        );
+        await admin.unsafe(`TRUNCATE ${TABLES.join(", ")} RESTART IDENTITY CASCADE`);
       },
       async dispose() {
         await admin.end({ timeout: 5 });

@@ -57,7 +57,9 @@ describe("satellite repository", () => {
     const db = new InMemoryDatabase();
     await db.satellites.upsertMany([satellite()]);
     expect(await db.satellites.upsertMany([satellite()])).toBe(0);
-    expect(await db.satellites.upsertMany([satellite({ name: "ISS (RENAMED)" })])).toBe(1);
+    expect(await db.satellites.upsertMany([satellite({ name: "ISS (RENAMED)" })])).toBe(
+      1,
+    );
   });
 
   it("excludes decayed objects by default", async () => {

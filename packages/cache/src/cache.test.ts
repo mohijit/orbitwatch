@@ -293,6 +293,27 @@ describe("cache configuration", () => {
     );
   });
 
+  it("treats empty variables as absent, not as invalid configuration", () => {
+    // `cp .env.example .env.local` produces exactly this, and it used to crash the API
+    // at boot: the optional shared cache had effectively become mandatory. Caught by
+    // starting the real server rather than by any test that injected a cache directly.
+    const env = { UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "" };
+
+    expect(() => createCacheFromEnv(env)).not.toThrow();
+    expect(createCacheFromEnv(env).hasSharedLayer).toBe(false);
+    expect(hasSharedCacheConfig(env)).toBe(false);
+  });
+
+  it("treats one empty and one set variable as partial configuration", () => {
+    // Still an operator mistake worth reporting: they clearly intended a shared cache.
+    expect(() =>
+      createCacheFromEnv({
+        UPSTASH_REDIS_REST_URL: "https://example.upstash.io",
+        UPSTASH_REDIS_REST_TOKEN: "",
+      }),
+    ).toThrow(/partially configured/);
+  });
+
   it("rejects a malformed URL without echoing the value", () => {
     let message = "";
     try {

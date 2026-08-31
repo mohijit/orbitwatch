@@ -215,7 +215,9 @@ export function runDatabaseContractTests(
         ]);
 
         expect(
-          (await db.satellites.findMany({ objectTypes: ["DEBRIS"] })).map((r) => r.catalogId),
+          (await db.satellites.findMany({ objectTypes: ["DEBRIS"] })).map(
+            (r) => r.catalogId,
+          ),
         ).toEqual(["00002"]);
 
         expect(
@@ -223,7 +225,9 @@ export function runDatabaseContractTests(
         ).toEqual(["00003"]);
 
         expect(
-          (await db.satellites.findMany({ orbitClasses: ["GEO"] })).map((r) => r.catalogId),
+          (await db.satellites.findMany({ orbitClasses: ["GEO"] })).map(
+            (r) => r.catalogId,
+          ),
         ).toEqual(["00003"]);
       });
 
@@ -309,8 +313,10 @@ export function runDatabaseContractTests(
             epoch: at(0),
             retrievedAt: at(1),
             omm: { OBJECT_NAME: "ISS (ZARYA)", MEAN_MOTION: 15.5 },
-            tleLine1: "1 25544U 98067A   26060.00000000  .00000000  00000-0  00000-0 0  9990",
-            tleLine2: "2 25544  51.6400   0.0000 0006000   0.0000   0.0000 15.50000000    00",
+            tleLine1:
+              "1 25544U 98067A   26060.00000000  .00000000  00000-0  00000-0 0  9990",
+            tleLine2:
+              "2 25544  51.6400   0.0000 0006000   0.0000   0.0000 15.50000000    00",
           }),
         ]);
 
@@ -414,7 +420,9 @@ export function runDatabaseContractTests(
       });
 
       it("returns undefined when no element set predates the replayed time", async () => {
-        await db.elements.insertMany([makeElement({ catalogId: "25544", epoch: at(10) })]);
+        await db.elements.insertMany([
+          makeElement({ catalogId: "25544", epoch: at(10) }),
+        ]);
 
         // Deliberately no fallback to a later set. The caller decides whether backwards
         // propagation is acceptable; storage does not silently substitute.
@@ -466,9 +474,9 @@ export function runDatabaseContractTests(
 
         const latest = await db.elements.findAllLatest();
         expect(latest).toHaveLength(2);
-        expect(
-          latest.find((row) => row.catalogId === "25544")?.epoch.toISOString(),
-        ).toBe(at(7).toISOString());
+        expect(latest.find((row) => row.catalogId === "25544")?.epoch.toISOString()).toBe(
+          at(7).toISOString(),
+        );
       });
 
       it("omits decayed objects from findAllLatest by default", async () => {
@@ -486,7 +494,9 @@ export function runDatabaseContractTests(
         expect((await db.elements.findAllLatest()).map((r) => r.catalogId)).toEqual([
           "25544",
         ]);
-        expect(await db.elements.findAllLatest({ excludeDecayed: false })).toHaveLength(2);
+        expect(await db.elements.findAllLatest({ excludeDecayed: false })).toHaveLength(
+          2,
+        );
       });
 
       it("applies satellite filters to findAllLatest", async () => {
@@ -602,7 +612,9 @@ export function runDatabaseContractTests(
     describe("ingestion leases", () => {
       it("grants a lease to one holder and refuses the second", async () => {
         expect(await db.leases.acquire("celestrak:active", "worker-a", 60)).toBeDefined();
-        expect(await db.leases.acquire("celestrak:active", "worker-b", 60)).toBeUndefined();
+        expect(
+          await db.leases.acquire("celestrak:active", "worker-b", 60),
+        ).toBeUndefined();
       });
 
       it("lets an expired lease be taken over", async () => {
@@ -628,7 +640,9 @@ export function runDatabaseContractTests(
 
         // A late worker must not be able to free somebody else's lease.
         await db.leases.release("celestrak:active", "worker-b");
-        expect(await db.leases.acquire("celestrak:active", "worker-c", 60)).toBeUndefined();
+        expect(
+          await db.leases.acquire("celestrak:active", "worker-c", 60),
+        ).toBeUndefined();
 
         await db.leases.release("celestrak:active", "worker-a");
         expect(await db.leases.acquire("celestrak:active", "worker-c", 60)).toBeDefined();

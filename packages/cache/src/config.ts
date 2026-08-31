@@ -12,11 +12,22 @@ import { UpstashCacheDriver } from "./upstash.js";
  * endpoint surfaces honestly rather than pretending everything is configured.
  */
 
+/**
+ * Treat an empty environment variable as absent.
+ *
+ * `cp .env.example .env.local` produces `UPSTASH_REDIS_REST_URL=` with no value, and a
+ * variable set to the empty string is how "I have not configured this" actually looks
+ * in practice. Without this the optional shared cache became a mandatory one, and the
+ * API refused to boot on a fresh checkout — the opposite of the intended design.
+ */
+const optionalEnv = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
+
 const cacheConfigSchema = z.object({
   /** Upstash REST endpoint, e.g. https://<name>-<id>.upstash.io */
-  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+  UPSTASH_REDIS_REST_URL: optionalEnv(z.string().url()),
   /** Upstash REST token. Server-side only; never expose to a browser or app bundle. */
-  UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
+  UPSTASH_REDIS_REST_TOKEN: optionalEnv(z.string().min(1)),
   /** L1 lifetime in milliseconds. Short by design; L2 is the real cache. */
   CACHE_L1_TTL_MS: z.coerce.number().int().positive().default(5_000),
   /** Namespace prefix, so several environments can share one Redis safely. */
@@ -85,8 +96,10 @@ export function createMemoryCache(options: { now?: () => number } = {}): Layered
 
 /** Whether a shared cache is configured, without constructing one. */
 export function hasSharedCacheConfig(env: NodeJS.ProcessEnv = process.env): boolean {
+  // Length checked, not just presence: an empty variable is absent, and disagreeing
+  // with loadCacheConfig here would report a shared cache that will never be built.
   return (
-    typeof env["UPSTASH_REDIS_REST_URL"] === "string" &&
-    typeof env["UPSTASH_REDIS_REST_TOKEN"] === "string"
+    (env["UPSTASH_REDIS_REST_URL"] ?? "").length > 0 &&
+    (env["UPSTASH_REDIS_REST_TOKEN"] ?? "").length > 0
   );
 }
