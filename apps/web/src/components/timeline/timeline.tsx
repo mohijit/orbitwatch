@@ -33,6 +33,22 @@ export function Timeline({ time, mode, onChange }: TimelineProps) {
   const [sliderValue, setSliderValue] = useState(0.5);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  /**
+   * The clock renders only after mount.
+   *
+   * This page is statically prerendered, so anything derived from `Date.now()` during
+   * render is frozen at BUILD time. Emitting it into the HTML would ship a timestamp
+   * that is stale by however long ago the deploy happened, and then disagree with the
+   * client on hydration (React error #418). A product whose entire premise is being
+   * precise about which instant a position refers to must not display a fabricated one,
+   * so the server renders a placeholder and the real clock appears on the first client
+   * render.
+   */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (mode === "simulation") anchorRef.current = time;
   }, [mode, time]);
@@ -61,9 +77,15 @@ export function Timeline({ time, mode, onChange }: TimelineProps) {
         ) : (
           <span className="timeline__sim-badge">SIMULATION</span>
         )}
-        <time className="timeline__clock" dateTime={new Date(time).toISOString()}>
-          {new Date(time).toUTCString()}
-        </time>
+        {mounted ? (
+          <time className="timeline__clock" dateTime={new Date(time).toISOString()}>
+            {new Date(time).toUTCString()}
+          </time>
+        ) : (
+          <span className="timeline__clock" aria-hidden="true">
+            &mdash;
+          </span>
+        )}
       </div>
 
       <input

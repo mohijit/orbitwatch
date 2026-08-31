@@ -14,6 +14,9 @@ test("open, search ISS, select, verify panel, scrub time, return to live", async
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
+  // React reports hydration mismatches as an uncaught error, not console.error, so a
+  // console-only listener silently passes a page that fails to hydrate.
+  page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message}`));
 
   await page.goto("/");
 
@@ -36,16 +39,28 @@ test("open, search ISS, select, verify panel, scrub time, return to live", async
   await expect(page.getByTestId("accuracy-badge")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("element-epoch")).not.toBeEmpty();
 
+  // The accuracy label encodes hours-from-epoch ("NOMINAL · 14h"), so it is the
+  // evidence that the panel recomputed for a new instant rather than showing a stale one.
+  const liveLabel = await page.getByTestId("element-epoch").textContent();
+
   // SCRUB TIME: dragging the timeline switches LIVE -> SIMULATION.
   await expect(page.getByTestId("timeline-mode")).toContainText("LIVE");
   const scrubber = page.locator(".timeline__scrubber");
-  await scrubber.fill("0.2");
+
+  // 0.4 is -9.6h on a +/-48h range. The seeded database holds a single element set, so
+  // the target must land AFTER its epoch for historical replay to resolve anything;
+  // scrubbing further back is the separate "no data that far back" case below.
+  await scrubber.fill("0.4");
   await expect(page.getByTestId("timeline-mode")).toContainText("SIMULATION", {
     timeout: 5_000,
   });
 
-  // The panel must still be showing real data for the new instant, not a stale one.
-  await expect(page.getByTestId("accuracy-badge")).toBeVisible();
+  // The panel must be showing real data for the NEW instant, not the live one. The
+  // element set is unchanged, so only the distance from its epoch can have moved.
+  await expect(page.getByTestId("accuracy-badge")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("element-epoch")).not.toHaveText(liveLabel ?? "", {
+    timeout: 15_000,
+  });
 
   // RETURN TO LIVE.
   await page.getByTestId("return-to-live").click();
@@ -74,4 +89,29 @@ test("searching for a non-existent object shows no results, not an error", async
   await page.getByRole("button", { name: /search satellites/i }).click();
   await page.getByPlaceholder(/search by name/i).fill("this satellite does not exist anywhere");
   await expect(page.getByText("No matching satellites")).toBeVisible({ timeout: 10_000 });
+});
+
+test("scrubbing past the earliest element set reports no data, not a stale position", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByTestId("catalog-count")).toHaveText("1 OBJECTS", { timeout: 30_000 });
+
+  await page.getByRole("button", { name: /search satellites/i }).click();
+  await page.getByPlaceholder(/search by name/i).fill("ISS");
+  await page.getByText("ISS (ZARYA)").click();
+  await expect(page.getByTestId("accuracy-badge")).toBeVisible({ timeout: 10_000 });
+
+  // 0.2 is -28.8h, before the epoch of the only element set the seed holds. The honest
+  // outcome is "we have nothing for that moment" — never the previous position left on
+  // screen, which would silently present one instant's data as another's.
+  await page.locator(".timeline__scrubber").fill("0.2");
+  await expect(page.getByTestId("timeline-mode")).toContainText("SIMULATION", {
+    timeout: 5_000,
+  });
+
+  await expect(page.locator(".telemetry-panel__status--error")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("accuracy-badge")).toBeHidden();
 });
