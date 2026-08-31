@@ -1,0 +1,97 @@
+/*
+ * Milestone 0 styling only. The design system lands in Milestone 3; this exists so
+ * the proof of concept is legible and the dark shell paints before Cesium loads.
+ */
+:root {
+  --ow-bg: #070b14;
+  --ow-surface: rgba(14, 20, 33, 0.82);
+  --ow-border: rgba(148, 176, 214, 0.18);
+  --ow-text: #e8eef8;
+  --ow-text-muted: #8ba0bd;
+  --ow-accent: #35c8f5;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--ow-bg);
+  color: var(--ow-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "tnum" 1;
+}
+
+.shell { position: relative; height: 100dvh; overflow: hidden; }
+
+.shell__bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  background: linear-gradient(to bottom, rgba(7, 11, 20, 0.9), transparent);
+}
+
+.shell__brand { font-size: 0.95rem; font-weight: 600; letter-spacing: 0.14em; }
+
+.shell__badge {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  color: var(--ow-text-muted);
+  border: 1px solid var(--ow-border);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+}
+
+.shell__note {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  z-index: 10;
+  padding: 0.6rem 1rem;
+  padding-bottom: max(0.6rem, env(safe-area-inset-bottom));
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--ow-text-muted);
+  background: linear-gradient(to top, rgba(7, 11, 20, 0.92), transparent);
+}
+
+.globe-root { position: absolute; inset: 0; }
+.globe-canvas { position: absolute; inset: 0; }
+
+/* Cesium injects its own credit container; keep it visible (attribution is a
+   licence requirement) but styled to match. */
+.cesium-widget-credits { font-size: 0.65rem; color: var(--ow-text-muted); }
+
+.globe-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--ow-bg);
+  text-align: center;
+  padding: 1rem;
+}
+
+.globe-overlay__label {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: var(--ow-accent);
+}
+
+.globe-overlay--error .globe-overlay__label { color: #f4a548; }
+.globe-overlay__detail { font-size: 0.75rem; color: var(--ow-text-muted); max-width: 34rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

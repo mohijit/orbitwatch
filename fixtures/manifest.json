@@ -1,6 +1,6 @@
 {
   "$comment": "Provenance for real provider responses captured by pnpm verify:providers. Fixtures are unmodified upstream payloads (except where truncated, noted per entry). Schemas are written to match these; fixtures are never edited to fit a schema.",
-  "generatedAt": "2026-08-31T12:40:34.505Z",
+  "generatedAt": "2026-08-31T12:52:56.835Z",
   "fixtures": [
     {
       "file": "launch-library-upcoming.json",
@@ -10,6 +10,15 @@
       "purpose": "Verify the LL2 2.3.0 cursor-paginated envelope and list-mode launch fields.",
       "truncated": false,
       "notes": "mode=list omits rocket, pad, provider and mission. Detailed mode must be verified separately."
+    },
+    {
+      "file": "launch-library-upcoming-detailed.json",
+      "provider": "launch-library",
+      "endpoint": "https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=2&mode=detailed",
+      "retrievedAt": "2026-08-31T12:51:37.046Z",
+      "purpose": "Verify the detailed launch payload before the launches UI depends on rocket, pad, launch provider and mission.",
+      "truncated": false,
+      "notes": "launch_service_provider.type is an OBJECT {id,name}, not the bare string used by older LL2 versions. pad.latitude/longitude are numbers. mission can be null. Payload is ~15KB per launch; only consumed fields are modelled."
     },
     {
       "file": "noaa-planetary-k-index.json",

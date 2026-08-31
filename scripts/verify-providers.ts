@@ -87,6 +87,16 @@ const PROBES: readonly ProbeSpec[] = [
     fixture: "launch-library-upcoming.json",
   },
   {
+    provider: "launch-library",
+    resource: "upcoming-detailed",
+    // mode=list omits rocket, pad, provider and mission. The launches UI needs all
+    // four, so the detailed payload must be verified before anything depends on it.
+    url: "https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=2&mode=detailed",
+    verifies: "LL2 detailed launch shape: rocket, pad, launch provider, mission",
+    fixture: "launch-library-upcoming-detailed.json",
+    maxFixtureBytes: 128 * 1024,
+  },
+  {
     provider: "noaa-swpc",
     resource: "planetary-k-index",
     url: "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json",

@@ -9,7 +9,12 @@ import {
   noaaScalesSchema,
   parseNoaaSolarWind,
 } from "./noaa.js";
-import { launchListResponseSchema, toLaunchSummaries } from "./launch-library.js";
+import {
+  launchDetailedResponseSchema,
+  launchListResponseSchema,
+  toLaunchDetails,
+  toLaunchSummaries,
+} from "./launch-library.js";
 import { toIssCrossCheck, whereTheIssSchema } from "./wheretheiss.js";
 
 /**
@@ -62,6 +67,7 @@ describe("fixture manifest", () => {
     for (const name of [
       "manifest.json",
       "launch-library-upcoming.json",
+      "launch-library-upcoming-detailed.json",
       "noaa-planetary-k-index.json",
       "noaa-propagated-solar-wind.json",
       "noaa-scales.json",
@@ -205,6 +211,67 @@ describe("Launch Library 2", () => {
 
   it("rejects a response whose envelope is missing", () => {
     expect(() => launchListResponseSchema.parse({ results: [] })).toThrow();
+  });
+});
+
+describe("Launch Library 2 detailed mode", () => {
+  const fixture = loadFixture("launch-library-upcoming-detailed.json");
+
+  it("parses the real detailed response", () => {
+    const parsed = launchDetailedResponseSchema.parse(fixture);
+    expect(parsed.results.length).toBeGreaterThan(0);
+  });
+
+  it("exposes the fields list mode omits", () => {
+    // The whole point of verifying detailed mode: these four are absent from
+    // mode=list, and the launches UI depends on all of them.
+    const details = toLaunchDetails(fixture);
+    expect(details.length).toBeGreaterThan(0);
+
+    for (const detail of details) {
+      expect(detail.providerName).toBeDefined();
+      expect(detail.rocketName).toBeDefined();
+      expect(detail.padName).toBeDefined();
+      expect(detail.missionName).toBeDefined();
+    }
+  });
+
+  it("reads launch_service_provider.type as an object, not a string", () => {
+    // LL2 2.3.0 returns {id, name} here. Older versions returned a bare string, and
+    // treating the object as one renders "[object Object]" in the UI.
+    const raw = fixture as { results: { launch_service_provider: { type: unknown } }[] };
+    expect(typeof raw.results[0]?.launch_service_provider.type).toBe("object");
+
+    const details = toLaunchDetails(fixture);
+    expect(details[0]?.providerType).toBe("Commercial");
+  });
+
+  it("yields usable pad coordinates for the launch-site layer", () => {
+    const details = toLaunchDetails(fixture);
+    for (const detail of details) {
+      if (detail.padCoordinates === undefined) continue;
+      expect(detail.padCoordinates.latitude).toBeGreaterThanOrEqual(-90);
+      expect(detail.padCoordinates.latitude).toBeLessThanOrEqual(90);
+      expect(detail.padCoordinates.longitude).toBeGreaterThanOrEqual(-180);
+      expect(detail.padCoordinates.longitude).toBeLessThanOrEqual(180);
+    }
+    expect(details.some((d) => d.padCoordinates !== undefined)).toBe(true);
+  });
+
+  it("tolerates a null mission", () => {
+    // LL2 legitimately returns null mission for some launches; the UI must not crash.
+    const withNullMission = {
+      ...(fixture as { count: number; next: null; previous: null; results: unknown[] }),
+      results: [
+        {
+          ...((fixture as { results: Record<string, unknown>[] }).results[0] ?? {}),
+          mission: null,
+        },
+      ],
+    };
+    const details = toLaunchDetails(withNullMission);
+    expect(details[0]?.missionName).toBeUndefined();
+    expect(details[0]?.rocketName).toBeDefined();
   });
 });
 

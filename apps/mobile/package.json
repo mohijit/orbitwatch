@@ -1,0 +1,28 @@
+{
+  "name": "@orbitwatch/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "clean": "rimraf .expo .turbo"
+  },
+  "dependencies": {
+    "@orbitwatch/contracts": "workspace:*",
+    "@orbitwatch/orbit-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@orbitwatch/eslint-config": "workspace:*",
+    "@orbitwatch/typescript-config": "workspace:*",
+    "eslint": "^9.36.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

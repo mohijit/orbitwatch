@@ -21,6 +21,7 @@
     "clean": "turbo run clean && rimraf node_modules"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.3.0",
     "prettier": "^3.6.2",
     "rimraf": "^6.0.1",
