@@ -12,6 +12,9 @@ import type { NextConfig } from "next";
  *     is imported.
  *
  * The result is that this file stays free of bundler configuration entirely.
+ *
+ * Note: satellite.js needs one build-time accommodation to be bundleable for a
+ * browser, but it cannot be expressed here — see patches/README.md.
  */
 const nextConfig: NextConfig = {
   reactStrictMode: true,

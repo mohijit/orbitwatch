@@ -1,0 +1,15 @@
+diff --git a/package.json b/package.json
+index b61f6584eb09d2d300d7757bbb16df6de4ff6732..368f856d9c094692063f118186c920b28430de02 100644
+--- a/package.json
++++ b/package.json
+@@ -15,6 +15,10 @@
+     "#wasm-single-thread": "./wasm-build/base-release/index.js",
+     "#wasm-multi-thread": "./wasm-build/pthreads-release/index.js"
+   },
++  "browser": {
++    "./wasm-build/base-release/index.js": false,
++    "./wasm-build/pthreads-release/index.js": false
++  },
+   "type": "module",
+   "scripts": {
+     "build": "rimraf dist wasm-build && npm run wasm:build && tsc",

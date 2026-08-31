@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  satellite.js@7.1.0: 97bcdeb719a2bc4eeb97873f8b391fc8a50e67ad8a5cf36c117851e1fcbda580
+
 importers:
 
   .:
@@ -299,7 +302,7 @@ importers:
     dependencies:
       satellite.js:
         specifier: ^7.1.0
-        version: 7.1.0
+        version: 7.1.0(patch_hash=97bcdeb719a2bc4eeb97873f8b391fc8a50e67ad8a5cf36c117851e1fcbda580)
     devDependencies:
       '@orbitwatch/eslint-config':
         specifier: workspace:*
@@ -3284,7 +3287,7 @@ snapshots:
 
   safe-stable-stringify@2.5.0: {}
 
-  satellite.js@7.1.0: {}
+  satellite.js@7.1.0(patch_hash=97bcdeb719a2bc4eeb97873f8b391fc8a50e67ad8a5cf36c117851e1fcbda580): {}
 
   scheduler@0.27.0: {}
 

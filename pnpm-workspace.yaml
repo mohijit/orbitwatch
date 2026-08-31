@@ -5,3 +5,5 @@ packages:
 # It is a transitive dependency of vitest and tsx.
 allowBuilds:
   esbuild: true
+patchedDependencies:
+  satellite.js@7.1.0: patches/satellite.js@7.1.0.patch
