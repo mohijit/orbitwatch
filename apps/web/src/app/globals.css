@@ -95,3 +95,143 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ── M3: search, telemetry panel, timeline ─────────────────────────────────────── */
+
+.command-trigger {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--ow-text-muted);
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+.command-trigger kbd {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.65rem;
+  color: var(--ow-accent);
+}
+
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(3, 5, 10, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.command-palette {
+  width: min(32rem, 92vw);
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.command-palette__input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--ow-text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ow-border);
+  padding: 0.9rem 1rem;
+  outline: none;
+}
+
+.command-palette__results { list-style: none; margin: 0; padding: 0.35rem; max-height: 22rem; overflow-y: auto; }
+
+.command-palette__result {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.command-palette__result--active { background: rgba(53, 200, 245, 0.14); }
+.command-palette__result-id { color: var(--ow-text-muted); font-family: ui-monospace, monospace; font-size: 0.75rem; }
+.command-palette__empty { padding: 0.75rem; color: var(--ow-text-muted); font-size: 0.8rem; }
+
+.telemetry-panel {
+  position: absolute;
+  top: 4rem;
+  right: 1rem;
+  z-index: 10;
+  width: 18rem;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  backdrop-filter: blur(8px);
+}
+
+.telemetry-panel__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.telemetry-panel__catalog-id { font-family: ui-monospace, monospace; font-size: 0.85rem; color: var(--ow-accent); }
+.telemetry-panel__close { background: none; border: none; color: var(--ow-text-muted); font-size: 1.1rem; cursor: pointer; line-height: 1; }
+
+.telemetry-panel__status { font-size: 0.8rem; color: var(--ow-text-muted); }
+.telemetry-panel__status--error { color: #f4a548; }
+
+.telemetry-panel__badge {
+  display: inline-block;
+  font-family: ui-monospace, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--ow-border);
+}
+.telemetry-panel__badge--nominal { color: #4ade80; border-color: rgba(74, 222, 128, 0.4); }
+.telemetry-panel__badge--degraded { color: #facc15; border-color: rgba(250, 204, 21, 0.4); }
+.telemetry-panel__badge--extrapolated { color: #f4a548; border-color: rgba(244, 165, 72, 0.4); }
+.telemetry-panel__badge--unreliable { color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
+
+.telemetry-panel__warning { font-size: 0.75rem; color: var(--ow-text-muted); margin: 0 0 0.5rem; }
+.telemetry-panel__facts { margin: 0; font-size: 0.8rem; }
+.telemetry-panel__facts dt { color: var(--ow-text-muted); font-size: 0.7rem; }
+.telemetry-panel__facts dd { margin: 0 0 0.4rem; }
+
+.timeline {
+  position: absolute;
+  left: 50%;
+  bottom: 2.75rem;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: min(34rem, 90vw);
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 12px;
+  padding: 0.6rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.timeline__mode { display: flex; align-items: center; gap: 0.6rem; font-size: 0.7rem; }
+.timeline__live-badge { color: #4ade80; font-weight: 700; letter-spacing: 0.1em; }
+.timeline__sim-badge { color: #facc15; font-weight: 700; letter-spacing: 0.1em; }
+.timeline__clock { color: var(--ow-text-muted); font-family: ui-monospace, monospace; }
+
+.timeline__scrubber { width: 100%; accent-color: var(--ow-accent); }
+
+.timeline__live-button {
+  align-self: flex-end;
+  font-size: 0.7rem;
+  color: var(--ow-accent);
+  background: none;
+  border: 1px solid var(--ow-border);
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+}
+.timeline__live-button:disabled { opacity: 0.4; cursor: default; }

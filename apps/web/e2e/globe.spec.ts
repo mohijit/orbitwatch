@@ -29,10 +29,10 @@ test("initialises Cesium and renders a globe", async ({ page }) => {
   await page.goto("/");
 
   // The loading overlay disappears only after the Viewer is constructed.
-  await expect(page.getByText("Initialising globe engine…")).toBeHidden({
+  await expect(page.getByText("Loading catalog…")).toBeHidden({
     timeout: 90_000,
   });
-  await expect(page.getByText("Globe failed to initialise")).toBeHidden();
+  await expect(page.getByText("Failed to load catalog")).toBeHidden();
 
   // Cesium creates its own canvas inside the container.
   const canvas = page.locator(".globe-canvas canvas");

@@ -2,7 +2,7 @@ import { sgp4 } from "satellite.js";
 import { describe, expect, it } from "vitest";
 
 import { parseTle } from "./elements.js";
-import { propagateAt, sampleTimes } from "./propagation.js";
+import { propagateAt, propagateManyAt, sampleTimes } from "./propagation.js";
 
 /**
  * Reference propagation tests.
@@ -190,5 +190,51 @@ describe("sampleTimes", () => {
   it("rejects an end before the start", () => {
     const earlier = new Date(start.getTime() - 1000);
     expect(() => sampleTimes(start, earlier, 30)).toThrow(RangeError);
+  });
+});
+
+describe("propagateManyAt", () => {
+  const { satrec: iss } = parseTle(ISS_TLE_LINE_1, ISS_TLE_LINE_2);
+  const time = new Date("2020-05-31T07:20:00.000Z");
+
+  it("agrees with propagateAt for the same satellite and instant", () => {
+    const single = propagateAt(iss, time);
+    const bulk = propagateManyAt([iss], time);
+
+    expect(bulk).toHaveLength(1);
+    expect(bulk[0]?.ok).toBe(true);
+    if (single.ok && bulk[0]?.ok === true) {
+      expect(bulk[0].longitude).toBeCloseTo(single.state.geodetic.longitude, 9);
+      expect(bulk[0].latitude).toBeCloseTo(single.state.geodetic.latitude, 9);
+      expect(bulk[0].altitude).toBeCloseTo(single.state.geodetic.altitude, 9);
+    }
+  });
+
+  it("keeps output index-aligned with input, including failures", () => {
+    // Propagating 200 years past a LEO element's epoch trips the community decay
+    // check: a legitimate failure mode, not a malformed input. The bulk result must
+    // still occupy its slot rather than being dropped, or every later index would
+    // shift and mislabel every satellite after it.
+    const farFuture = new Date(time.getTime() + 200 * 365 * 24 * 3600_000);
+    const bulk = propagateManyAt([iss, iss], farFuture);
+
+    // Sanity: propagateAt agrees this instant is unusable for this element set.
+    expect(propagateAt(iss, farFuture).ok).toBe(false);
+
+    expect(bulk).toHaveLength(2);
+    expect(bulk[0]?.catalogId).toBe("25544");
+    expect(bulk[0]?.ok).toBe(false);
+    expect(bulk[1]?.catalogId).toBe("25544");
+    expect(bulk[1]?.ok).toBe(false);
+  });
+
+  it("returns an empty array for an empty catalog", () => {
+    expect(propagateManyAt([], time)).toEqual([]);
+  });
+
+  it("normalises longitude into (-180, 180]", () => {
+    const bulk = propagateManyAt([iss], time);
+    expect(bulk[0]?.longitude).toBeGreaterThan(-180);
+    expect(bulk[0]?.longitude).toBeLessThanOrEqual(180);
   });
 });

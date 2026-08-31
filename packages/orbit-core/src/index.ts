@@ -33,9 +33,11 @@ export {
 export {
   altitudeAt,
   propagateAt,
+  propagateManyAt,
   propagateSeries,
   sampleTimes,
   subSatellitePoint,
+  type BulkPositionResult,
   type PropagateOptions,
 } from "./propagation.js";
 

@@ -237,3 +237,61 @@ export function altitudeAt(
   return result.ok ? result.state.geodetic.altitude : undefined;
 }
 
+
+/** One catalog object's outcome from a bulk propagation pass. */
+export interface BulkPositionResult {
+  readonly catalogId: CatalogId;
+  readonly ok: boolean;
+  readonly longitude: number;
+  readonly latitude: number;
+  readonly altitude: number;
+}
+
+/**
+ * Propagate many satellites to one instant, positions only.
+ *
+ * This is the whole-catalog path: the globe needs 10,000+ points at low frequency, and
+ * the full `SatelliteState` (ECI/ECF vectors, velocity, ascending flag) that
+ * `propagateAt` computes is wasted work when only a point position is going to be
+ * drawn. `propagateAt` remains the single-satellite path, used for the selected
+ * object's telemetry panel where the extra fields are actually read.
+ *
+ * A failed satellite is included with `ok: false` and zeroed coordinates rather than
+ * omitted, so the caller's output stays index-aligned with its input — dropping
+ * entries would require every consumer to re-derive which catalog id a given output
+ * slot belongs to.
+ */
+export function propagateManyAt(
+  satrecs: readonly SatRec[],
+  time: Date,
+): readonly BulkPositionResult[] {
+  const gmst = gstime(time);
+  const results: BulkPositionResult[] = new Array(satrecs.length);
+
+  for (let index = 0; index < satrecs.length; index += 1) {
+    const satrec = satrecs[index] as SatRec;
+    const propagated = propagate(satrec, time, { communityDecayCheckEnabled: true });
+
+    if (propagated === null) {
+      results[index] = {
+        catalogId: satrec.satnum satisfies CatalogId,
+        ok: false,
+        longitude: 0,
+        latitude: 0,
+        altitude: 0,
+      };
+      continue;
+    }
+
+    const geodeticRadians = eciToGeodetic(propagated.position, gmst);
+    results[index] = {
+      catalogId: satrec.satnum satisfies CatalogId,
+      ok: true,
+      longitude: normalizeLongitude(toDegrees(radians(geodeticRadians.longitude))),
+      latitude: toDegrees(radians(geodeticRadians.latitude)),
+      altitude: geodeticRadians.height,
+    };
+  }
+
+  return results;
+}

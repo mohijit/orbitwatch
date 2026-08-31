@@ -427,15 +427,16 @@ describe("OrbitWatch API", () => {
       expect(gp?.lastSuccessAt).toBeUndefined();
     });
 
-    it("reports CelesTrak as unverified", async () => {
+    it("reports CelesTrak as verified", async () => {
       const body = providerStatusResponseSchema.parse(
         (await app.inject({ url: "/providers/status" })).json(),
       );
 
-      // CelesTrak's schema is documentation-derived and has never met a live response.
-      // Freshness and verification are different questions and must not be conflated.
+      // Verified from CI against a real production response (celestrak.org is
+      // unreachable from the development network). Freshness and verification are
+      // different questions and must not be conflated: this asserts only the latter.
       expect(body.providers.find((p) => p.provider === "celestrak-gp")?.verified).toBe(
-        false,
+        true,
       );
     });
 
@@ -485,7 +486,7 @@ describe("OrbitWatch API", () => {
       }[];
       expect(providers.find((p) => p.provider === "noaa-swpc")?.status).toBe("VERIFIED");
       expect(providers.find((p) => p.provider === "celestrak-gp")?.status).toBe(
-        "BLOCKED",
+        "VERIFIED",
       );
     });
   });

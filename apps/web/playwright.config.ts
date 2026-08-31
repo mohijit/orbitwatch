@@ -36,10 +36,20 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: "pnpm exec next start --port 3100",
-    url: "http://127.0.0.1:3100",
-    reuseExistingServer: false,
-    timeout: 180_000,
-  },
+  webServer: [
+    {
+      // Seeded in-memory API: no DATABASE_URL, so this runs unmodified on a fork's
+      // pull request. Seeded from real captured CelesTrak fixtures, not invented data.
+      command: "pnpm --filter @orbitwatch/api exec tsx src/seed-dev.ts",
+      url: "http://127.0.0.1:3333/health/live",
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+    {
+      command: "pnpm exec next start --port 3100",
+      url: "http://127.0.0.1:3100",
+      reuseExistingServer: false,
+      timeout: 180_000,
+    },
+  ],
 });

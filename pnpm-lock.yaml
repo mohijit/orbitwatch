@@ -118,6 +118,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@orbitwatch/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@orbitwatch/orbit-core':
         specifier: workspace:*
         version: link:../../packages/orbit-core
