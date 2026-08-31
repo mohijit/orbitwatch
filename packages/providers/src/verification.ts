@@ -56,19 +56,17 @@ export const PROVIDER_VERIFICATION: Readonly<Record<ProviderId, ProviderVerifica
     verifiedAt: "2026-08-31T12:28:07.522Z",
   },
 
-  // Unreachable from the development network. The schemas are written from CelesTrak's
-  // documentation and are explicitly not verified — see schemas/celestrak.ts.
+  // Unreachable from the development network, so verified from CI instead, which has
+  // ordinary internet access. See .github/workflows/verify-providers.yml.
   "celestrak-gp": {
-    status: "BLOCKED",
-    endpoint: "https://celestrak.org/NORAD/elements/gp.php",
-    reason:
-      "TCP connect never completes from the development network (SYN blocked). " +
-      "Reproduced with curl over both IPv4 and IPv6, and via an independent fetch service.",
+    status: "VERIFIED",
+    endpoint: "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=json",
+    verifiedAt: "2026-08-31T15:42:55.247Z",
   },
   "celestrak-satcat": {
-    status: "BLOCKED",
-    endpoint: "https://celestrak.org/satcat/records.php",
-    reason: "Same host and same TCP connect failure as celestrak-gp.",
+    status: "VERIFIED",
+    endpoint: "https://celestrak.org/satcat/records.php?CATNR=25544&FORMAT=json",
+    verifiedAt: "2026-08-31T15:42:55.431Z",
   },
   "satnogs-db": {
     status: "BLOCKED",

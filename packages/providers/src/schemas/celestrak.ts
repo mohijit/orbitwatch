@@ -3,27 +3,36 @@ import { z } from "zod";
 /**
  * CelesTrak GP (OMM) and SATCAT schemas.
  *
- * ┌──────────────────────────────────────────────────────────────────────────┐
- * │ VERIFICATION STATUS: **UNVERIFIED**                                      │
- * │                                                                          │
- * │ These schemas are derived from CelesTrak documentation and from the      │
- * │ satellite.js OMM type definitions. They have NOT been validated against  │
- * │ a real production response, because celestrak.org is unreachable from    │
- * │ the development network (TCP connect never completes; see               │
- * │ fixtures/manifest.json and docs/adr/0005).                              │
- * │                                                                          │
- * │ Documentation-derived schemas are fine for development. They do NOT      │
- * │ satisfy the provider-verification gate. Before CelesTrak may be reported │
- * │ as integrated, a genuine production response must be captured with       │
- * │ `pnpm verify:providers celestrak`, these schemas validated against it,   │
- * │ and parsing tests added from that fixture.                               │
- * │                                                                          │
- * │ No fixture has been fabricated to close this gap.                        │
- * └──────────────────────────────────────────────────────────────────────────┘
+ * VERIFICATION STATUS: **VERIFIED** against real production responses captured from CI
+ * on 2026-08-31. celestrak.org is unreachable from the development network, so the
+ * verification runs on a GitHub runner, which has ordinary access. Provenance is in
+ * fixtures/manifest.json.
+ *
+ * Confirmed against the live response rather than the documentation:
+ *   * EPOCH carries NO timezone designator ("2026-08-31T03:26:51.705600"). It is UTC,
+ *     and parsing it with a bare new Date() applies the host offset instead.
+ *   * NORAD_CAT_ID arrives as a JSON number from CelesTrak and as a string from
+ *     Space-Track. Both are accepted; it is stored as text (Alpha-5, ADR 0004).
+ *   * SATCAT uses EMPTY STRINGS for absent values, not null.
+ *   * OBJECT_TYPE is the short code "PAY" and OPS_STATUS_CODE is "+".
  */
 
 /** Marks a schema whose shape has not been confirmed against live data. */
-export const CELESTRAK_VERIFICATION_STATUS = "UNVERIFIED" as const;
+export const CELESTRAK_VERIFICATION_STATUS = "VERIFIED" as const;
+
+/**
+ * SATCAT sends an EMPTY STRING for absent values, not null and not an omitted key.
+ * Observed in the real response: DECAY_DATE and DATA_STATUS_CODE both arrive as "".
+ *
+ * This matters more than it looks. An empty DECAY_DATE that survives as a string is
+ * present enough for a presence check, so a live object would be recorded as decayed
+ * and silently dropped from the catalog - the ISS included. Normalised at the edge.
+ */
+const emptyToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    schema.optional().nullable(),
+  );
 
 /**
  * Numeric fields arrive as JSON numbers from CelesTrak and as strings from
@@ -96,19 +105,19 @@ export const celestrakSatcatRecordSchema = z
     OBJECT_ID: z.string().optional(),
     NORAD_CAT_ID: z.union([z.number(), z.string()]),
     OBJECT_TYPE: z.string().optional(),
-    OPS_STATUS_CODE: z.string().optional(),
-    OWNER: z.string().optional(),
-    LAUNCH_DATE: z.string().optional().nullable(),
-    LAUNCH_SITE: z.string().optional().nullable(),
-    DECAY_DATE: z.string().optional().nullable(),
+    OPS_STATUS_CODE: emptyToUndefined(z.string()),
+    OWNER: emptyToUndefined(z.string()),
+    LAUNCH_DATE: emptyToUndefined(z.string()),
+    LAUNCH_SITE: emptyToUndefined(z.string()),
+    DECAY_DATE: emptyToUndefined(z.string()),
     PERIOD: numeric.optional().nullable(),
     INCLINATION: numeric.optional().nullable(),
     APOGEE: numeric.optional().nullable(),
     PERIGEE: numeric.optional().nullable(),
     RCS: numeric.optional().nullable(),
-    DATA_STATUS_CODE: z.string().optional().nullable(),
-    ORBIT_CENTER: z.string().optional().nullable(),
-    ORBIT_TYPE: z.string().optional().nullable(),
+    DATA_STATUS_CODE: emptyToUndefined(z.string()),
+    ORBIT_CENTER: emptyToUndefined(z.string()),
+    ORBIT_TYPE: emptyToUndefined(z.string()),
   })
   .passthrough();
 

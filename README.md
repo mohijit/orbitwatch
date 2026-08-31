@@ -111,7 +111,7 @@ reference data, so the test cannot pass by agreeing with itself.
 | NOAA SWPC | Space weather (Kp, solar wind, R/S/G scales) | ✅ Yes |
 | Launch Library 2 | Launches (list + detailed) | ✅ Yes |
 | WhereTheISS.at | Independent ISS cross-check only | ✅ Yes |
-| **CelesTrak** | **Primary orbital elements + catalog** | ❌ **No — network-blocked** |
+| CelesTrak | Primary orbital elements + catalog | ✅ Yes — verified from CI |
 | **SatNOGS DB** | **Transmitters** | ❌ **No — network-blocked** |
 
 A provider counts as verified only after real production calls, captured fixtures,

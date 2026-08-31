@@ -55,21 +55,29 @@
       "purpose": "Independent ISS position for cross-checking local SGP4 output. Verification only, never used to drive the animation.",
       "truncated": false,
       "notes": "velocity is km/HOUR, not km/s. timestamp is unix SECONDS."
+    },
+    {
+      "file": "celestrak-gp-iss.json",
+      "provider": "celestrak-gp",
+      "endpoint": "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=json",
+      "retrievedAt": "2026-08-31T15:42:55.247Z",
+      "purpose": "Verify OMM JSON field names consumed by json2satrec, using ISS elements.",
+      "truncated": false,
+      "capturedFrom": "GitHub Actions runner; celestrak.org is unreachable from the development network.",
+      "notes": "EPOCH has NO timezone designator and is UTC. NORAD_CAT_ID is a JSON number here and a string from Space-Track."
+    },
+    {
+      "file": "celestrak-satcat-iss.json",
+      "provider": "celestrak-satcat",
+      "endpoint": "https://celestrak.org/satcat/records.php?CATNR=25544&FORMAT=json",
+      "retrievedAt": "2026-08-31T15:42:55.431Z",
+      "purpose": "Verify SATCAT metadata field names: object type, owner, launch site, RCS.",
+      "truncated": false,
+      "capturedFrom": "GitHub Actions runner.",
+      "notes": "Absent values are EMPTY STRINGS, not null: DECAY_DATE and DATA_STATUS_CODE both arrive as \"\". OBJECT_TYPE is the short code PAY; OPS_STATUS_CODE is +."
     }
   ],
   "blocked": [
-    {
-      "provider": "celestrak-gp",
-      "endpoint": "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=json",
-      "status": "BLOCKED",
-      "reason": "TCP connect never completes from this network (SYN blocked); reproduced with curl on both IPv4 and default stack, and via an independent fetch service. DNS resolves. Not a credential problem."
-    },
-    {
-      "provider": "celestrak-satcat",
-      "endpoint": "https://celestrak.org/satcat/records.php?CATNR=25544&FORMAT=json",
-      "status": "BLOCKED",
-      "reason": "Same host, same TCP connect failure."
-    },
     {
       "provider": "satnogs-db",
       "endpoint": "https://db.satnogs.org/api/transmitters/?satellite__norad_cat_id=25544&format=json",
