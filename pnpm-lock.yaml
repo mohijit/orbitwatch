@@ -101,6 +101,74 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
+  apps/worker:
+    dependencies:
+      '@orbitwatch/cache':
+        specifier: workspace:*
+        version: link:../../packages/cache
+      '@orbitwatch/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@orbitwatch/orbit-core':
+        specifier: workspace:*
+        version: link:../../packages/orbit-core
+      '@orbitwatch/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
+      zod:
+        specifier: ^4.1.5
+        version: 4.5.4
+    devDependencies:
+      '@orbitwatch/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@orbitwatch/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.13.3
+      eslint:
+        specifier: ^9.36.0
+        version: 9.39.5(supports-color@7.2.0)
+      rimraf:
+        specifier: ^6.0.1
+        version: 6.1.3
+      tsx:
+        specifier: ^4.20.3
+        version: 4.23.13
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(supports-color@7.2.0)(tsx@4.23.13)
+
+  packages/cache:
+    dependencies:
+      zod:
+        specifier: ^4.1.5
+        version: 4.5.4
+    devDependencies:
+      '@orbitwatch/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@orbitwatch/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.13.3
+      eslint:
+        specifier: ^9.36.0
+        version: 9.39.5(supports-color@7.2.0)
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(supports-color@7.2.0)(tsx@4.23.13)
+
   packages/contracts:
     dependencies:
       zod:
@@ -113,6 +181,40 @@ importers:
       '@orbitwatch/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      eslint:
+        specifier: ^9.36.0
+        version: 9.39.5(supports-color@7.2.0)
+      tsx:
+        specifier: ^4.20.3
+        version: 4.23.13
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(supports-color@7.2.0)(tsx@4.23.13)
+
+  packages/database:
+    dependencies:
+      '@orbitwatch/orbit-core':
+        specifier: workspace:*
+        version: link:../orbit-core
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
+      zod:
+        specifier: ^4.1.5
+        version: 4.5.4
+    devDependencies:
+      '@orbitwatch/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@orbitwatch/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.13.3
       eslint:
         specifier: ^9.36.0
         version: 9.39.5(supports-color@7.2.0)
@@ -1408,6 +1510,10 @@ packages:
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
+
+  postgres@3.4.9:
+    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
+    engines: {node: '>=12'}
 
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
@@ -2707,6 +2813,8 @@ snapshots:
       nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  postgres@3.4.9: {}
 
   prelude-ls@1.2.1: {}
 

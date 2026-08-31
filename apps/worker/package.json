@@ -1,0 +1,32 @@
+{
+  "name": "@orbitwatch/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "start": "tsx src/main.ts",
+    "ingest": "tsx src/cli.ts",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@orbitwatch/cache": "workspace:*",
+    "@orbitwatch/database": "workspace:*",
+    "@orbitwatch/orbit-core": "workspace:*",
+    "@orbitwatch/providers": "workspace:*",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@orbitwatch/eslint-config": "workspace:*",
+    "@orbitwatch/typescript-config": "workspace:*",
+    "@types/node": "^24.3.0",
+    "eslint": "^9.36.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

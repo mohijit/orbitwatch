@@ -88,6 +88,17 @@ export function parseOmm(
     );
   }
 
+  // json2satrec does not throw for physically impossible elements; it reports them on
+  // satrec.error. Checking here keeps the OMM path consistent with the TLE path and
+  // stops an unpropagable record being stored, only to fail later on the globe where
+  // the cause is far harder to trace.
+  if (satrec.error !== 0) {
+    throw new ElementParseError(
+      `OMM produced an invalid satellite record for ${catalogId} (SGP4 error ${satrec.error})`,
+      { catalogId, reason: `sgp4-error-${satrec.error}` },
+    );
+  }
+
   const elements: OrbitalElements = {
     catalogId,
     name: typeof omm.OBJECT_NAME === "string" ? omm.OBJECT_NAME : catalogId,

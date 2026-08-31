@@ -25,3 +25,6 @@ export {
 export * from "./schemas/noaa.js";
 export * from "./schemas/launch-library.js";
 export * from "./schemas/wheretheiss.js";
+
+// CelesTrak schemas. NOT verified against a live response — see the file header.
+export * from "./schemas/celestrak.js";

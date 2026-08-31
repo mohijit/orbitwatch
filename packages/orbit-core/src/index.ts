@@ -83,3 +83,14 @@ export {
   type SatellitePass,
   type VisibilityClassification,
 } from "./passes.js";
+
+export {
+  assessAccuracy,
+  formatDuration,
+  isEffectivelyLive,
+  selectBestElements,
+  type AccuracyAssessment,
+  type DatedElementSet,
+  type ElementSelection,
+  type PropagationConfidence,
+} from "./accuracy.js";
