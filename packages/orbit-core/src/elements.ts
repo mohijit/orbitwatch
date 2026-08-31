@@ -258,7 +258,7 @@ function internationalDesignatorFromTle(line1: string): string | undefined {
  *
  * We therefore append an explicit "Z" whenever no designator is present.
  */
-function parseUtcTimestamp(value: string): Date | undefined {
+export function parseUtcTimestamp(value: string): Date | undefined {
   if (typeof value !== "string") return undefined;
 
   const trimmed = value.trim();

@@ -37,6 +37,8 @@ interface ProbeSpec {
   readonly fixture: string;
   /** Cap the stored fixture so we do not commit multi-megabyte payloads. */
   readonly maxFixtureBytes?: number;
+  /** Override the default request timeout for a known-slow provider. */
+  readonly timeoutMs?: number;
 }
 
 const ROOT = process.cwd();
@@ -53,6 +55,7 @@ const PROBES: readonly ProbeSpec[] = [
     url: "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=json",
     verifies: "OMM JSON field names for json2satrec; ISS elements",
     fixture: "celestrak-gp-iss.json",
+    timeoutMs: 90_000,
   },
   {
     provider: "celestrak-satcat",
@@ -67,6 +70,7 @@ const PROBES: readonly ProbeSpec[] = [
     url: "https://db.satnogs.org/api/transmitters/?satellite__norad_cat_id=25544&format=json",
     verifies: "transmitter schema: downlink/uplink, mode, baud, status",
     fixture: "satnogs-transmitters-iss.json",
+    timeoutMs: 90_000,
   },
   {
     provider: "satnogs-db",
@@ -92,11 +96,21 @@ const PROBES: readonly ProbeSpec[] = [
   },
   {
     provider: "noaa-swpc",
-    resource: "solar-wind-plasma",
-    url: "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json",
-    verifies: "solar wind speed/density/temperature product format",
-    fixture: "noaa-solar-wind-plasma.json",
+    resource: "propagated-solar-wind",
+    // NOTE: services.swpc.noaa.gov/products/solar-wind/ does NOT exist (HTTP 404),
+    // despite being widely cited. The real product lives under geospace/ and is
+    // already propagated to Earth, which is what we want for satellite context.
+    url: "https://services.swpc.noaa.gov/products/geospace/propagated-solar-wind-1-hour.json",
+    verifies: "solar wind speed, density and IMF Bz propagated to Earth",
+    fixture: "noaa-propagated-solar-wind.json",
     maxFixtureBytes: 64 * 1024,
+  },
+  {
+    provider: "noaa-swpc",
+    resource: "noaa-scales",
+    url: "https://services.swpc.noaa.gov/products/noaa-scales.json",
+    verifies: "NOAA R/S/G scale values for the space weather dashboard",
+    fixture: "noaa-scales.json",
   },
   {
     provider: "wheretheiss",
@@ -148,6 +162,7 @@ async function main(): Promise<void> {
         // --force collapses the interval but leaves backoff enforcement intact,
         // because backoff means upstream explicitly told us to stop.
         ...(force ? { minIntervalMs: 0 } : {}),
+        ...(probe.timeoutMs === undefined ? {} : { timeoutMs: probe.timeoutMs }),
       });
 
       if (result.status === "skipped") {

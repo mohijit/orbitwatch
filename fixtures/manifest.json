@@ -1,0 +1,71 @@
+{
+  "$comment": "Provenance for real provider responses captured by pnpm verify:providers. Fixtures are unmodified upstream payloads (except where truncated, noted per entry). Schemas are written to match these; fixtures are never edited to fit a schema.",
+  "generatedAt": "2026-08-31T12:40:34.505Z",
+  "fixtures": [
+    {
+      "file": "launch-library-upcoming.json",
+      "provider": "launch-library",
+      "endpoint": "https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=5&mode=list",
+      "retrievedAt": "2026-08-31T12:28:05.841Z",
+      "purpose": "Verify the LL2 2.3.0 cursor-paginated envelope and list-mode launch fields.",
+      "truncated": false,
+      "notes": "mode=list omits rocket, pad, provider and mission. Detailed mode must be verified separately."
+    },
+    {
+      "file": "noaa-planetary-k-index.json",
+      "provider": "noaa-swpc",
+      "endpoint": "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json",
+      "retrievedAt": "2026-08-31T12:28:06.305Z",
+      "purpose": "Verify the Kp product encoding and field names.",
+      "truncated": false,
+      "notes": "Array of OBJECTS, not the header-row array-of-arrays many sources describe. time_tag has no timezone designator and must be read as UTC."
+    },
+    {
+      "file": "noaa-propagated-solar-wind.json",
+      "provider": "noaa-swpc",
+      "endpoint": "https://services.swpc.noaa.gov/products/geospace/propagated-solar-wind-1-hour.json",
+      "retrievedAt": "2026-08-31T12:32:11.501Z",
+      "purpose": "Verify solar wind speed, density and IMF components propagated to Earth.",
+      "truncated": false,
+      "notes": "Header-row array-of-arrays. products/solar-wind/ does NOT exist (HTTP 404) despite being widely cited."
+    },
+    {
+      "file": "noaa-scales.json",
+      "provider": "noaa-swpc",
+      "endpoint": "https://services.swpc.noaa.gov/products/noaa-scales.json",
+      "retrievedAt": "2026-08-31T12:32:11.668Z",
+      "purpose": "Verify the NOAA R/S/G space weather scale payload.",
+      "truncated": false,
+      "notes": "Object keyed by day offset as strings (\"-1\",\"0\",\"1\"..). Scale and probability values are strings or null, not numbers."
+    },
+    {
+      "file": "wheretheiss-iss.json",
+      "provider": "wheretheiss",
+      "endpoint": "https://api.wheretheiss.at/v1/satellites/25544",
+      "retrievedAt": "2026-08-31T12:28:07.522Z",
+      "purpose": "Independent ISS position for cross-checking local SGP4 output. Verification only, never used to drive the animation.",
+      "truncated": false,
+      "notes": "velocity is km/HOUR, not km/s. timestamp is unix SECONDS."
+    }
+  ],
+  "blocked": [
+    {
+      "provider": "celestrak-gp",
+      "endpoint": "https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=json",
+      "status": "BLOCKED",
+      "reason": "TCP connect never completes from this network (SYN blocked); reproduced with curl on both IPv4 and default stack, and via an independent fetch service. DNS resolves. Not a credential problem."
+    },
+    {
+      "provider": "celestrak-satcat",
+      "endpoint": "https://celestrak.org/satcat/records.php?CATNR=25544&FORMAT=json",
+      "status": "BLOCKED",
+      "reason": "Same host, same TCP connect failure."
+    },
+    {
+      "provider": "satnogs-db",
+      "endpoint": "https://db.satnogs.org/api/transmitters/?satellite__norad_cat_id=25544&format=json",
+      "status": "BLOCKED",
+      "reason": "TCP connect and TLS handshake both succeed (~0.6s), then the server returns no bytes before timeout. Reproduced on the cheapest endpoint (/api/modes/) so it is not query cost. No credentials required by this API."
+    }
+  ]
+}

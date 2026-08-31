@@ -27,7 +27,7 @@ export type GuardDecision =
   | { allowed: true; reason: "first-request" | "interval-elapsed" }
   | {
       allowed: false;
-      reason: "within-interval" | "backoff-active";
+      reason: "within-interval" | "backoff-active" | "reservation-held";
       /** Milliseconds until the next request is permitted. */
       retryAfterMs: number;
       /** When the last successful request happened, if known. */
@@ -37,6 +37,17 @@ export type GuardDecision =
 export interface GuardEntry {
   /** ISO timestamp of the last *successful* upstream fetch. */
   lastFetchedAt?: string;
+  /**
+   * ISO timestamp of an in-flight reservation.
+   *
+   * Written by `tryAcquire` before the request goes out, and cleared by `commit` or
+   * `rollback`. Kept SEPARATE from `lastFetchedAt` on purpose: if the process dies
+   * mid-request, a reservation written into `lastFetchedAt` would be
+   * indistinguishable from a completed download and would block the resource for the
+   * entire provider interval even though nothing was ever fetched. A reservation
+   * expires after {@link RESERVATION_LEASE_MS}, so a crash costs minutes, not hours.
+   */
+  reservedAt?: string;
   /** ISO timestamp before which no request may be made (set after a 403/429). */
   backoffUntil?: string;
   /** Consecutive refusals from upstream, used to escalate backoff. */
@@ -73,6 +84,15 @@ const BACKOFF_SCHEDULE_MS = [
   4 * 60 * 60 * 1000, // 4 h
   24 * 60 * 60 * 1000, // 24 h
 ] as const;
+
+/**
+ * How long a reservation stays valid before it is treated as abandoned.
+ *
+ * Must comfortably exceed the slowest legitimate request (our default HTTP timeout is
+ * 30s, with 90s overrides for known-slow providers), while staying far below the
+ * shortest provider interval so a crash never costs a whole data cycle.
+ */
+const RESERVATION_LEASE_MS = 5 * 60 * 1000;
 
 const DEFAULT_STATE_FILE = join(process.cwd(), ".data", "fetch-guard.json");
 
@@ -114,9 +134,10 @@ export class FetchGuard {
    * requests inside one cycle and triggering exactly the 403/firewall response the
    * guard exists to prevent.
    *
-   * The reservation optimistically stamps `lastFetchedAt` to now. Callers MUST then
-   * call {@link commit} on success or {@link rollback} on a non-rate-limit failure,
-   * so that a transient network error does not consume the whole interval budget.
+   * The reservation is recorded as `reservedAt`, deliberately NOT as `lastFetchedAt`,
+   * so an abandoned attempt can never masquerade as a completed download. Callers
+   * MUST call {@link commit} on success or {@link rollback} on a non-rate-limit
+   * failure, so a transient network error does not consume the interval budget.
    */
   async tryAcquire(key: string, minIntervalMs: number): Promise<AcquireResult> {
     return this.#serialise(async () => {
@@ -127,7 +148,8 @@ export class FetchGuard {
       const previous = state[key];
       state[key] = {
         ...previous,
-        lastFetchedAt: this.#now().toISOString(),
+        // A reservation, NOT a recorded fetch. Only `commit` sets lastFetchedAt.
+        reservedAt: this.#now().toISOString(),
       };
       await this.#write(state);
 
@@ -145,6 +167,8 @@ export class FetchGuard {
   async commit(reservation: Reservation): Promise<void> {
     await this.#serialise(async () => {
       const state = await this.#read();
+      // Replaces the entry wholesale: records the fetch, drops the reservation and
+      // clears any prior backoff, since a success proves we are welcome again.
       state[reservation.key] = { lastFetchedAt: this.#now().toISOString() };
       await this.#write(state);
     });
@@ -184,8 +208,9 @@ export class FetchGuard {
       const backoffMs = BACKOFF_SCHEDULE_MS[index] as number;
       const backoffUntil = new Date(this.#now().getTime() + backoffMs);
 
+      const { reservedAt: _discardedReservation, ...withoutReservation } = previous;
       state[key] = {
-        ...previous,
+        ...withoutReservation,
         backoffUntil: backoffUntil.toISOString(),
         consecutiveRefusals: refusals,
       };
@@ -207,6 +232,22 @@ export class FetchGuard {
 
   #decide(entry: GuardEntry | undefined, minIntervalMs: number): GuardDecision {
     const now = this.#now().getTime();
+
+    // An unexpired reservation means another caller (or another process) currently
+    // has a request in flight for this resource.
+    if (entry?.reservedAt) {
+      const reserved = Date.parse(entry.reservedAt);
+      if (Number.isFinite(reserved) && now - reserved < RESERVATION_LEASE_MS) {
+        return {
+          allowed: false,
+          reason: "reservation-held",
+          retryAfterMs: RESERVATION_LEASE_MS - (now - reserved),
+          lastFetchedAt: entry.lastFetchedAt ? new Date(entry.lastFetchedAt) : undefined,
+        };
+      }
+      // Lease expired: the holder crashed without committing or rolling back. Fall
+      // through and let this caller take the slot.
+    }
 
     if (entry?.backoffUntil) {
       const until = Date.parse(entry.backoffUntil);

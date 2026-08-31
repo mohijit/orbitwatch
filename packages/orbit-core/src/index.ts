@@ -16,6 +16,7 @@ export {
   normalizeCatalogId,
   parseOmm,
   parseTle,
+  parseUtcTimestamp,
   type ParsedElements,
   type ParseOmmOptions,
   type ParseTleOptions,

@@ -180,6 +180,56 @@ describe("FetchGuard", () => {
     expect(retry.acquired).toBe(false);
   });
 
+  it("does not record a reservation as a completed fetch", async () => {
+    // Regression test for a real incident: tryAcquire originally stamped
+    // lastFetchedAt, so an interrupted run left behind state indistinguishable from
+    // a successful download and blocked the resource for the full provider interval
+    // even though nothing was ever retrieved.
+    const g = guard();
+    const acquisition = await g.tryAcquire("satnogs-db:satellites", TWO_HOURS);
+    expect(acquisition.acquired).toBe(true);
+
+    const inspected = await g.inspect("satnogs-db:satellites");
+    expect(inspected.lastFetchedAt).toBeUndefined();
+  });
+
+  it("releases an abandoned reservation once its lease expires", async () => {
+    // Simulates a process killed mid-request: neither commit nor rollback ran.
+    const g = guard();
+    await g.tryAcquire("celestrak-gp:active", TWO_HOURS);
+
+    // Still inside the lease: another caller must not barge in.
+    clock = new Date(clock.getTime() + 60 * 1000);
+    expect((await g.tryAcquire("celestrak-gp:active", TWO_HOURS)).acquired).toBe(false);
+
+    // Past the 5-minute lease: the slot is recoverable, and crucially this costs
+    // minutes rather than the full two-hour cycle.
+    clock = new Date(clock.getTime() + 5 * 60 * 1000);
+    expect((await g.tryAcquire("celestrak-gp:active", TWO_HOURS)).acquired).toBe(true);
+  });
+
+  it("reports reservation-held while a request is genuinely in flight", async () => {
+    const g = guard();
+    await g.tryAcquire("celestrak-gp:active", TWO_HOURS);
+
+    const decision = await g.check("celestrak-gp:active", TWO_HOURS);
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) throw new Error("unreachable");
+    expect(decision.reason).toBe("reservation-held");
+  });
+
+  it("clears the reservation when upstream refuses", async () => {
+    const g = guard();
+    await g.tryAcquire("celestrak-gp:active", TWO_HOURS);
+    await g.recordRefusal("celestrak-gp:active");
+
+    // Backoff, not a dangling reservation, is what should be blocking now.
+    const decision = await g.check("celestrak-gp:active", 0);
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) throw new Error("unreachable");
+    expect(decision.reason).toBe("backoff-active");
+  });
+
   it("writes valid JSON that a later run can read", async () => {
     await acquireAndCommit(guard(), "celestrak-gp:active");
     const raw = await readFile(stateFile, "utf8");

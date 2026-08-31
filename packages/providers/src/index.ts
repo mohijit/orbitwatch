@@ -19,3 +19,9 @@ export {
   type ProviderId,
   type ProviderPolicy,
 } from "./policy.js";
+
+// Provider response schemas, each validated against a real captured production
+// response. See fixtures/manifest.json for provenance.
+export * from "./schemas/noaa.js";
+export * from "./schemas/launch-library.js";
+export * from "./schemas/wheretheiss.js";

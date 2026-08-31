@@ -34,7 +34,7 @@ export type GuardedFetchResult =
   | { status: "fetched"; body: string; contentType: string; fetchedAt: Date }
   | {
       status: "skipped";
-      reason: "within-interval" | "backoff-active";
+      reason: "within-interval" | "backoff-active" | "reservation-held";
       retryAfterMs: number;
       lastFetchedAt: Date | undefined;
     };
