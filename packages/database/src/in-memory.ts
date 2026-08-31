@@ -70,49 +70,12 @@ export class InMemoryDatabase implements Database {
   #createSatelliteRepository(): SatelliteRepository {
     const store = this.#satellites;
 
-    const matches = (record: SatelliteRecord, filter: SatelliteFilter): boolean => {
-      if (filter.objectTypes && !filter.objectTypes.includes(record.objectType)) {
-        return false;
-      }
-      if (
-        filter.orbitClasses &&
-        (record.orbitClass === undefined ||
-          !filter.orbitClasses.includes(record.orbitClass))
-      ) {
-        return false;
-      }
-      if (
-        filter.owners &&
-        (record.owner === undefined || !filter.owners.includes(record.owner))
-      ) {
-        return false;
-      }
-      // Decayed objects are excluded by default: they are no longer in orbit, and
-      // including them by default would put re-entered debris on the live globe.
-      if ((filter.excludeDecayed ?? true) && record.decayDate !== undefined) {
-        return false;
-      }
-      if (filter.search !== undefined && filter.search.trim() !== "") {
-        const needle = filter.search.trim().toLowerCase();
-        const haystack = [
-          record.name,
-          record.catalogId,
-          record.internationalDesignator ?? "",
-          record.owner ?? "",
-        ]
-          .join(" ")
-          .toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
-      return true;
-    };
-
     return {
       async findByCatalogId(catalogId) {
         return store.get(catalogId);
       },
       async findMany(filter) {
-        const all = [...store.values()].filter((record) => matches(record, filter));
+        const all = [...store.values()].filter((record) => matchesSatelliteFilter(record, filter));
         // Stable ordering so pagination cannot repeat or skip rows.
         all.sort((a, b) => a.catalogId.localeCompare(b.catalogId));
         const offset = filter.offset ?? 0;
@@ -120,7 +83,7 @@ export class InMemoryDatabase implements Database {
         return all.slice(offset, offset + limit);
       },
       async count(filter) {
-        return [...store.values()].filter((record) => matches(record, filter)).length;
+        return [...store.values()].filter((record) => matchesSatelliteFilter(record, filter)).length;
       },
       async upsertMany(records) {
         let changed = 0;
@@ -170,12 +133,15 @@ export class InMemoryDatabase implements Database {
       },
 
       async findAllLatest(filter) {
-        const excludeDecayed = filter?.excludeDecayed ?? true;
         const byCatalog = new Map<CatalogId, OrbitalElementRecord>();
         for (const row of rows) {
-          if (excludeDecayed && satellites.get(row.catalogId)?.decayDate !== undefined) {
-            continue;
-          }
+          // The whole SatelliteFilter applies, not only excludeDecayed. A filter
+          // parameter that silently ignores most of its fields is a trap: the caller
+          // believes it narrowed the catalog and it did not.
+          const satellite = satellites.get(row.catalogId);
+          if (satellite === undefined) continue;
+          if (!matchesSatelliteFilter(satellite, filter ?? {})) continue;
+
           const existing = byCatalog.get(row.catalogId);
           if (existing === undefined || row.epoch.getTime() > existing.epoch.getTime()) {
             byCatalog.set(row.catalogId, row);
@@ -422,3 +388,48 @@ function sameSatellite(a: SatelliteRecord, b: SatelliteRecord): boolean {
 }
 
 export type { ProviderRunStatus };
+
+/**
+ * Whether a satellite passes a filter.
+ *
+ * Shared by findMany, count and findAllLatest so the three cannot drift apart, and
+ * mirrors the WHERE clause built in postgres.ts. The contract suite runs against both.
+ */
+function matchesSatelliteFilter(
+  record: SatelliteRecord,
+  filter: SatelliteFilter,
+): boolean {
+  if (filter.objectTypes && !filter.objectTypes.includes(record.objectType)) {
+    return false;
+  }
+  if (
+    filter.orbitClasses &&
+    (record.orbitClass === undefined || !filter.orbitClasses.includes(record.orbitClass))
+  ) {
+    return false;
+  }
+  if (
+    filter.owners &&
+    (record.owner === undefined || !filter.owners.includes(record.owner))
+  ) {
+    return false;
+  }
+  // Decayed objects are excluded by default: they are no longer in orbit, and including
+  // them by default would put re-entered debris on the live globe.
+  if ((filter.excludeDecayed ?? true) && record.decayDate !== undefined) {
+    return false;
+  }
+  if (filter.search !== undefined && filter.search.trim() !== "") {
+    const needle = filter.search.trim().toLowerCase();
+    // Each field is tested on its own rather than against a concatenation, so a search
+    // term can never match by spanning the boundary between two unrelated fields.
+    const fields = [
+      record.name,
+      record.catalogId,
+      record.internationalDesignator ?? "",
+      record.owner ?? "",
+    ];
+    if (!fields.some((field) => field.toLowerCase().includes(needle))) return false;
+  }
+  return true;
+}
