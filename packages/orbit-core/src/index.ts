@@ -42,3 +42,44 @@ export {
 // Re-exported so consumers never need a direct satellite.js dependency, which keeps
 // the SGP4 implementation swappable and the version pinned in exactly one place.
 export type { OMMJsonObject, SatRec } from "satellite.js";
+
+export {
+  azimuthToCompass,
+  dopplerFactorAt,
+  lookAnglesAt,
+  observerAt,
+} from "./look-angles.js";
+
+export {
+  ASTRONOMICAL_TWILIGHT_DEGREES,
+  CIVIL_TWILIGHT_DEGREES,
+  classifyShadow,
+  illuminationAt,
+  observerLighting,
+  sunAltitudeDegrees,
+  type ObserverLighting,
+} from "./illumination.js";
+
+export {
+  footprintAngularRadius,
+  footprintAt,
+  footprintRadiusKm,
+  footprintRing,
+  geodetic,
+  groundTrack,
+  splitAtAntimeridian,
+  type GroundTrack,
+  type GroundTrackOptions,
+  type GroundTrackPoint,
+} from "./ground-track.js";
+
+export {
+  classifyVisibility,
+  describeVisibility,
+  predictPasses,
+  NO_PASSES,
+  type PassPoint,
+  type PassPredictionOptions,
+  type SatellitePass,
+  type VisibilityClassification,
+} from "./passes.js";
