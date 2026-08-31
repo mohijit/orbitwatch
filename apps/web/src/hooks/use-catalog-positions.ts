@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { fetchCatalogElements } from "../lib/api-client";
 
 /**
- * Fields per object in the worker's position buffer: [lon, lat, altKm, ok].
+ * Fields per object in the worker's position buffer:
+ * [x, y, z, vx, vy, vz, ok] — Earth-fixed position in km, velocity in km/s.
  *
  * Duplicated from propagation.worker.ts rather than imported: that module runs
  * `self.addEventListener` at load time, and importing it from the main thread would
@@ -13,7 +14,7 @@ import { fetchCatalogElements } from "../lib/api-client";
  * cheap enough to keep in sync by hand; the alternative is a shared non-worker module
  * for one integer, which is worse.
  */
-export const POSITION_FIELDS = 4;
+export const POSITION_FIELDS = 7;
 
 /**
  * Whole-catalog positions, propagated in a Web Worker.

@@ -197,17 +197,65 @@ describe("propagateManyAt", () => {
   const { satrec: iss } = parseTle(ISS_TLE_LINE_1, ISS_TLE_LINE_2);
   const time = new Date("2020-05-31T07:20:00.000Z");
 
-  it("agrees with propagateAt for the same satellite and instant", () => {
+  it("agrees with propagateAt on Earth-fixed position", () => {
     const single = propagateAt(iss, time);
     const bulk = propagateManyAt([iss], time);
 
     expect(bulk).toHaveLength(1);
     expect(bulk[0]?.ok).toBe(true);
     if (single.ok && bulk[0]?.ok === true) {
-      expect(bulk[0].longitude).toBeCloseTo(single.state.geodetic.longitude, 9);
-      expect(bulk[0].latitude).toBeCloseTo(single.state.geodetic.latitude, 9);
-      expect(bulk[0].altitude).toBeCloseTo(single.state.geodetic.altitude, 9);
+      expect(bulk[0].x).toBeCloseTo(single.state.positionEcf.x, 9);
+      expect(bulk[0].y).toBeCloseTo(single.state.positionEcf.y, 9);
+      expect(bulk[0].z).toBeCloseTo(single.state.positionEcf.z, 9);
     }
+  });
+
+  it("reports a velocity that is the true derivative of the Earth-fixed position", () => {
+    // The reason this test exists: rotating the inertial velocity into Earth-fixed axes
+    // and calling it done leaves out the frame's own rotation, and the resulting error
+    // is ~0.5 km/s at LEO — small enough to look plausible, large enough that every
+    // satellite visibly slides in longitude. Differencing two real propagations a
+    // second apart is an independent check that cannot share that mistake.
+    const dtSeconds = 1;
+    const later = new Date(time.getTime() + dtSeconds * 1000);
+
+    const now = propagateManyAt([iss], time)[0];
+    const next = propagateManyAt([iss], later)[0];
+    expect(now?.ok).toBe(true);
+    expect(next?.ok).toBe(true);
+    if (now === undefined || next === undefined) return;
+
+    const measured = {
+      x: (next.x - now.x) / dtSeconds,
+      y: (next.y - now.y) / dtSeconds,
+      z: (next.z - now.z) / dtSeconds,
+    };
+
+    // Finite differencing over a whole second across a curved orbit leaves a little
+    // second-order error, so this is a tolerance on agreement, not equality. An
+    // uncorrected velocity would miss by ~0.5, hundreds of times this bound.
+    expect(now.vx).toBeCloseTo(measured.x, 2);
+    expect(now.vy).toBeCloseTo(measured.y, 2);
+    expect(now.vz).toBeCloseTo(measured.z, 2);
+  });
+
+  it("extrapolates to within metres over one tick interval", () => {
+    // This is what the renderer does between propagation ticks, so the error budget
+    // for straight-line dead reckoning is worth pinning down rather than assuming.
+    const dtSeconds = 1;
+    const now = propagateManyAt([iss], time)[0];
+    const truth = propagateManyAt([iss], new Date(time.getTime() + dtSeconds * 1000))[0];
+    if (now === undefined || truth === undefined) return;
+
+    const drift = Math.hypot(
+      now.x + now.vx * dtSeconds - truth.x,
+      now.y + now.vy * dtSeconds - truth.y,
+      now.z + now.vz * dtSeconds - truth.z,
+    );
+
+    // Kilometres. The ISS covers 7.66 km in this interval, so this is metres of error
+    // on kilometres of motion.
+    expect(drift).toBeLessThan(0.02);
   });
 
   it("keeps output index-aligned with input, including failures", () => {
@@ -230,11 +278,5 @@ describe("propagateManyAt", () => {
 
   it("returns an empty array for an empty catalog", () => {
     expect(propagateManyAt([], time)).toEqual([]);
-  });
-
-  it("normalises longitude into (-180, 180]", () => {
-    const bulk = propagateManyAt([iss], time);
-    expect(bulk[0]?.longitude).toBeGreaterThan(-180);
-    expect(bulk[0]?.longitude).toBeLessThanOrEqual(180);
   });
 });

@@ -53,6 +53,7 @@ export default function HomePage() {
         selectedCatalogId={selectedCatalogId}
         onSelect={setSelectedCatalogId}
         telemetry={telemetry}
+        live={mode === "live"}
       />
 
       <TelemetryPanel

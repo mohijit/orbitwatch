@@ -28,7 +28,7 @@ import {
  *       by the timeline when scrubbing.
  *   OUT { type: "ready", count, failed }
  *   OUT { type: "positions", buffer, time }
- *       buffer is Float32Array [lon, lat, altKm, ok, ...] per object, in the SAME
+ *       buffer is Float32Array [x, y, z, vx, vy, vz, ok, ...] per object, in the SAME
  *       ORDER as `catalogIds` from the "ready" message — index-aligned, not keyed,
  *       because a lookup per object per tick is exactly the per-frame cost this
  *       design exists to avoid.
@@ -37,7 +37,15 @@ import {
  *       every tick.
  */
 
-export const POSITION_FIELDS = 4; // lon, lat, altKm, ok
+/**
+ * Floats per object: Earth-fixed position (km), Earth-fixed velocity (km/s), ok flag.
+ *
+ * Velocity is carried so the main thread can advance positions between ticks. The whole
+ * catalogue cannot be propagated every animation frame, but a satellite's motion over
+ * one tick is very nearly a straight line — under 20 m of error across a second for the
+ * ISS — so dead reckoning renders smoothly without pretending to be a new propagation.
+ */
+export const POSITION_FIELDS = 7; // x, y, z, vx, vy, vz, ok
 const OK = 1;
 const NOT_OK = 0;
 
@@ -92,10 +100,13 @@ function handleTick(message: TickMessage): void {
     const result = results[index];
     if (result === undefined) continue;
     const offset = index * POSITION_FIELDS;
-    buffer[offset] = result.longitude;
-    buffer[offset + 1] = result.latitude;
-    buffer[offset + 2] = result.altitude;
-    buffer[offset + 3] = result.ok ? OK : NOT_OK;
+    buffer[offset] = result.x;
+    buffer[offset + 1] = result.y;
+    buffer[offset + 2] = result.z;
+    buffer[offset + 3] = result.vx;
+    buffer[offset + 4] = result.vy;
+    buffer[offset + 5] = result.vz;
+    buffer[offset + 6] = result.ok ? OK : NOT_OK;
   }
 
   // Transferred, not copied or structured-cloned: ownership of the underlying

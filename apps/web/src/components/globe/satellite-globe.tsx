@@ -22,11 +22,25 @@ import type * as CesiumNamespace from "cesium";
 
 const NOT_RENDERABLE_ALTITUDE = -1; // pushes an unusable position below the ellipsoid, out of view
 
+/**
+ * How far the renderer will dead-reckon past the last propagation before freezing.
+ *
+ * Ticks are ~1 s apart, so a few seconds of slack covers a late worker. Beyond that
+ * something has actually stopped, and a straight line extended indefinitely from one
+ * propagation stops resembling an orbit. Freezing is the honest failure.
+ */
+const MAX_EXTRAPOLATION_SECONDS = 5;
+
 export interface SatelliteGlobeProps {
   readonly catalogState: CatalogTickState;
   readonly selectedCatalogId: string | undefined;
   readonly onSelect: (catalogId: string | undefined) => void;
   readonly telemetry: SelectedTelemetryState;
+  /**
+   * Whether the timeline is running in real time. False while scrubbing, where the
+   * instant is fixed and positions must hold still.
+   */
+  readonly live: boolean;
 }
 
 type CesiumViewer = InstanceType<CesiumModule["Viewer"]>;
@@ -37,6 +51,7 @@ export function SatelliteGlobe({
   selectedCatalogId,
   onSelect,
   telemetry,
+  live,
 }: SatelliteGlobeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
@@ -126,7 +141,15 @@ export function SatelliteGlobe({
     };
   }, []);
 
-  // Point cloud: (re)built once when the catalog becomes ready, then mutated in place.
+  // Point cloud: built once when the catalog arrives, then advanced every frame.
+  //
+  // The worker propagates the whole catalogue at ~1 Hz, which is all that 16,000 SGP4
+  // solutions per tick allows. Drawing at that rate is what made satellites visibly
+  // jump and pause. So each frame this dead-reckons from the last propagated state
+  // using the velocity the worker sends alongside it: position + velocity * dt. Over a
+  // single tick that is straight-line motion along a very slightly curved arc, worth
+  // under 20 m for the ISS against 7.66 km travelled, and it is a real physical
+  // extrapolation rather than a visual smoothing of stale data.
   useEffect(() => {
     const Cesium = cesiumRef.current;
     const points = pointsRef.current;
@@ -135,7 +158,6 @@ export function SatelliteGlobe({
     if (catalogState.status !== "ready") return;
 
     const alreadyBuilt = catalogIdsRef.current.length === catalogState.catalogIds.length;
-
     if (!alreadyBuilt) {
       points.removeAll();
       catalogIdsRef.current = catalogState.catalogIds;
@@ -152,31 +174,57 @@ export function SatelliteGlobe({
 
     const positions = catalogState.positions;
     const count = catalogState.catalogIds.length;
-    for (let index = 0; index < count; index += 1) {
-      const point = points.get(index);
-      const offset = index * POSITION_FIELDS;
-      const ok = positions[offset + 3] === 1;
-      const catalogId = catalogState.catalogIds[index];
+    const tickTime = catalogState.tickTime;
 
-      if (!ok) {
-        point.position = Cesium.Cartesian3.fromDegrees(0, 0, NOT_RENDERABLE_ALTITUDE);
-        continue;
+    const selectedColor = Cesium.Color.fromCssColorString("#ffcc55");
+    const normalColor = Cesium.Color.fromCssColorString("#8ecbff").withAlpha(0.85);
+    const hidden = Cesium.Cartesian3.fromDegrees(0, 0, NOT_RENDERABLE_ALTITUDE);
+
+    let frame = 0;
+    const scratch = new Cesium.Cartesian3();
+
+    const render = (): void => {
+      // Only extrapolate while the timeline is actually running forward in real time.
+      // In SIMULATION the instant is frozen, so wall-clock elapsed time has no bearing
+      // on where these objects are and advancing them would be invention.
+      let dtSeconds = 0;
+      if (live) {
+        dtSeconds = (Date.now() - tickTime) / 1000;
+        // If ticks stop arriving - a backgrounded tab, a stalled worker - freeze rather
+        // than extrapolate ever further from a single propagation.
+        if (dtSeconds < 0) dtSeconds = 0;
+        if (dtSeconds > MAX_EXTRAPOLATION_SECONDS) dtSeconds = MAX_EXTRAPOLATION_SECONDS;
       }
 
-      const longitude = positions[offset] as number;
-      const latitude = positions[offset + 1] as number;
-      const altitudeKm = positions[offset + 2] as number;
-      point.position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitudeKm * 1000);
+      for (let index = 0; index < count; index += 1) {
+        const point = points.get(index);
+        const offset = index * POSITION_FIELDS;
 
-      const isSelected = catalogId === selectedCatalogId;
-      point.pixelSize = isSelected ? 8 : 3;
-      point.color = isSelected
-        ? Cesium.Color.fromCssColorString("#ffcc55")
-        : Cesium.Color.fromCssColorString("#8ecbff").withAlpha(0.85);
-    }
+        if (positions[offset + 6] !== 1) {
+          point.position = hidden;
+          continue;
+        }
 
-    viewer.scene.requestRender();
-  }, [catalogState, selectedCatalogId]);
+        // Kilometres from the propagator, metres for Cesium's fixed frame.
+        scratch.x = ((positions[offset] as number) + (positions[offset + 3] as number) * dtSeconds) * 1000;
+        scratch.y = ((positions[offset + 1] as number) + (positions[offset + 4] as number) * dtSeconds) * 1000;
+        scratch.z = ((positions[offset + 2] as number) + (positions[offset + 5] as number) * dtSeconds) * 1000;
+        point.position = scratch;
+
+        const isSelected = catalogState.catalogIds[index] === selectedCatalogId;
+        point.pixelSize = isSelected ? 8 : 3;
+        point.color = isSelected ? selectedColor : normalColor;
+      }
+
+      viewer.scene.requestRender();
+      frame = requestAnimationFrame(render);
+    };
+
+    frame = requestAnimationFrame(render);
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [catalogState, selectedCatalogId, live]);
 
   // Ground track + footprint for the selected object.
   useEffect(() => {

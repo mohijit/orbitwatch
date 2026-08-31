@@ -239,27 +239,51 @@ export function altitudeAt(
 
 
 /** One catalog object's outcome from a bulk propagation pass. */
+/**
+ * One satellite's position and velocity in the Earth-fixed frame, for bulk rendering.
+ *
+ * ECEF rather than geodetic because that is what a renderer actually consumes: Cesium
+ * takes a Cartesian3 in the fixed frame, so emitting latitude/longitude here would mean
+ * converting to geodetic and immediately back again, 16,000 times per tick.
+ *
+ * Velocity is included so the caller can interpolate between propagation ticks.
+ * Propagating the whole catalogue every animation frame is not affordable, but SGP4
+ * computes velocity anyway, so carrying it costs nothing and lets a consumer advance
+ * positions smoothly at display rate between ticks.
+ */
 export interface BulkPositionResult {
   readonly catalogId: CatalogId;
   readonly ok: boolean;
-  readonly longitude: number;
-  readonly latitude: number;
-  readonly altitude: number;
+  /** Earth-fixed position, kilometres. */
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  /** Earth-fixed velocity, km/s: the true time derivative of the position above. */
+  readonly vx: number;
+  readonly vy: number;
+  readonly vz: number;
 }
 
 /**
- * Propagate many satellites to one instant, positions only.
+ * Earth's rotation rate, radians per second (IERS).
+ *
+ * Needed to turn an inertial velocity into an Earth-fixed one. See below.
+ */
+const EARTH_ROTATION_RAD_PER_S = 7.2921159e-5;
+
+/**
+ * Propagate many satellites to one instant, position and velocity only.
  *
  * This is the whole-catalog path: the globe needs 10,000+ points at low frequency, and
- * the full `SatelliteState` (ECI/ECF vectors, velocity, ascending flag) that
- * `propagateAt` computes is wasted work when only a point position is going to be
- * drawn. `propagateAt` remains the single-satellite path, used for the selected
- * object's telemetry panel where the extra fields are actually read.
+ * the full `SatelliteState` (geodetic, speed, ascending flag) that `propagateAt`
+ * computes is wasted work when only a point is going to be drawn. `propagateAt` remains
+ * the single-satellite path, used for the selected object's telemetry panel where the
+ * extra fields are actually read.
  *
- * A failed satellite is included with `ok: false` and zeroed coordinates rather than
- * omitted, so the caller's output stays index-aligned with its input — dropping
- * entries would require every consumer to re-derive which catalog id a given output
- * slot belongs to.
+ * A failed satellite is included with `ok: false` and zeroed vectors rather than
+ * omitted, so the caller's output stays index-aligned with its input — dropping entries
+ * would require every consumer to re-derive which catalog id a given output slot belongs
+ * to.
  */
 export function propagateManyAt(
   satrecs: readonly SatRec[],
@@ -276,20 +300,37 @@ export function propagateManyAt(
       results[index] = {
         catalogId: satrec.satnum satisfies CatalogId,
         ok: false,
-        longitude: 0,
-        latitude: 0,
-        altitude: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+        vx: 0,
+        vy: 0,
+        vz: 0,
       };
       continue;
     }
 
-    const geodeticRadians = eciToGeodetic(propagated.position, gmst);
+    const position = eciToEcf(propagated.position, gmst);
+    const rotated = eciToEcf(propagated.velocity, gmst);
+
+    // Rotating the inertial velocity into Earth-fixed axes is NOT the Earth-fixed
+    // velocity: it still describes motion relative to an inertial observer. The
+    // derivative of the Earth-fixed position also carries the frame's own rotation,
+    // so subtract omega x r, with omega = (0, 0, w):
+    //
+    //     omega x r = (-w * r.y, w * r.x, 0)
+    //
+    // Omitting this looks harmless and is not — it leaves roughly 0.5 km/s of error at
+    // LEO altitude, which shows up as every satellite steadily sliding in longitude.
     results[index] = {
       catalogId: satrec.satnum satisfies CatalogId,
       ok: true,
-      longitude: normalizeLongitude(toDegrees(radians(geodeticRadians.longitude))),
-      latitude: toDegrees(radians(geodeticRadians.latitude)),
-      altitude: geodeticRadians.height,
+      x: position.x,
+      y: position.y,
+      z: position.z,
+      vx: rotated.x + EARTH_ROTATION_RAD_PER_S * position.y,
+      vy: rotated.y - EARTH_ROTATION_RAD_PER_S * position.x,
+      vz: rotated.z,
     };
   }
 
