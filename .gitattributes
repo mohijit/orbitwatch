@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+pnpm-lock.yaml linguist-generated=true
+packages/orbit-core/test-fixtures/* linguist-vendored=true
