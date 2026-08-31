@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+.turbo/
+
+# Cesium static assets are copied from node_modules at build time
+apps/web/public/cesium/
+
+# Environment — never commit real credentials
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Ingestion snapshot cache.
+# This holds live provider payloads. It is deliberately NOT committed:
+# committed fixtures live in /fixtures and are curated, small and redacted.
+.data/
+
+# Test / coverage
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Native
+apps/mobile/.expo/
+apps/mobile/android/
+apps/mobile/ios/
+*.keystore
+!debug.keystore
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+# esbuild ships prebuilt native binaries and needs its install script to run.
+# It is a transitive dependency of vitest and tsx.
+allowBuilds:
+  esbuild: true
