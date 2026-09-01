@@ -5,6 +5,7 @@ import {
   FIXTURE_OBJECT_COUNT,
   FIXTURE_RECORDS,
   PINNED_CLOCK,
+  expectedDesignator,
   expectedEpochAge,
 } from "./fixture";
 
@@ -283,6 +284,17 @@ for (const expected of EXPECTED_OBJECTS) {
 
     const panel = page.getByTestId("telemetry-panel");
     await expect(panel).toContainText(`#${expected.catalogId}`);
+
+    // Identified by name, not only by number. Both are per-object and both come from
+    // the element set the panel fetched, so an app serving one object's elements for
+    // every id — the regression this suite exists to catch — shows the wrong name and
+    // the wrong launch here, not merely the wrong geometry.
+    await expect(page.getByTestId("satellite-name")).toHaveText(expected.name, {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("international-designator")).toHaveText(
+      expectedDesignator(expected.catalogId),
+    );
 
     // The orbit class is derived per object from its own elements. If the app fell
     // back to a single class — or to the UNKNOWN default that is byte-identical to

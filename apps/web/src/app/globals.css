@@ -174,8 +174,27 @@ html, body {
   backdrop-filter: blur(8px);
 }
 
-.telemetry-panel__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-.telemetry-panel__catalog-id { font-family: ui-monospace, monospace; font-size: 0.85rem; color: var(--ow-accent); }
+.telemetry-panel__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem; }
+.telemetry-panel__identity { min-width: 0; }
+/* Names run long ("IPM 2 & BREEZE-M R/B"); wrap rather than widen the panel. */
+.telemetry-panel__name {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ow-text);
+  overflow-wrap: anywhere;
+}
+.telemetry-panel__designators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.15rem 0 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+.telemetry-panel__catalog-id { font-family: ui-monospace, monospace; font-size: 0.75rem; color: var(--ow-accent); cursor: help; }
+.telemetry-panel__intl-id { color: var(--ow-text-muted); cursor: help; }
 .telemetry-panel__close { background: none; border: none; color: var(--ow-text-muted); font-size: 1.1rem; cursor: pointer; line-height: 1; }
 
 .telemetry-panel__status { font-size: 0.8rem; color: var(--ow-text-muted); }

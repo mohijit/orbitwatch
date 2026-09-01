@@ -26,6 +26,7 @@ const repoRoot = resolve(process.cwd(), "..", "..");
 interface OmmRecord {
   readonly NORAD_CAT_ID: number | string;
   readonly OBJECT_NAME: string;
+  readonly OBJECT_ID: string;
   readonly EPOCH: string;
 }
 
@@ -147,4 +148,15 @@ export function expectedEpochAge(catalogId: string): string {
     Math.abs(PINNED_CLOCK.getTime() - epochOf(fixtureRecord(catalogId)).getTime()) /
     3_600_000;
   return `${String(Math.round(hours))}h`;
+}
+
+/**
+ * The object's international designator, as published in its own element set.
+ *
+ * Read from the fixture rather than listed in EXPECTED_OBJECTS for the same reason as
+ * the epoch age: a re-export must not be able to leave a stale literal behind that
+ * quietly stops testing anything.
+ */
+export function expectedDesignator(catalogId: string): string {
+  return fixtureRecord(catalogId).OBJECT_ID;
 }

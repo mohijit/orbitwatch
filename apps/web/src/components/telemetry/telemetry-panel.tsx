@@ -11,6 +11,15 @@ import type { SelectedTelemetryState } from "../../hooks/use-selected-satellite"
  * EPOCH and RETRIEVAL TIME are three different facts, routinely conflated by other
  * trackers. Showing all three, plus the accuracy classification, is what makes a
  * displayed position an honest claim rather than an implied one.
+ *
+ * IDENTITY, NOT JUST A NUMBER
+ * The header carries the object's name, its NORAD catalog number and its international
+ * designator. The number alone is what this panel used to show, which is precise and
+ * unhelpful: "#67714" identifies the object exactly and tells a person nothing, when
+ * the name — STARLINK-36702 — was already sitting in the element set being displayed.
+ * All three stay visible because they answer different questions: the name is what you
+ * recognise, the catalog number is what you search other catalogues with, and the
+ * designator says which launch it came from.
  */
 
 export interface TelemetryPanelProps {
@@ -40,7 +49,37 @@ export function TelemetryPanel({ catalogId, telemetry, onClose, children }: Tele
   return (
     <aside className="telemetry-panel" data-testid="telemetry-panel" aria-label="Satellite telemetry">
       <div className="telemetry-panel__header">
-        <span className="telemetry-panel__catalog-id">#{catalogId}</span>
+        <div className="telemetry-panel__identity">
+          {/*
+            The name leads, because that is what a person recognises. It appears only
+            once the element set has arrived, since that record is where it comes from —
+            there is nothing to show before then, and a placeholder that later turns
+            into a different name reads as a correction rather than a load.
+          */}
+          {telemetry.status === "ready" ? (
+            <h2 className="telemetry-panel__name" data-testid="satellite-name">
+              {telemetry.name}
+            </h2>
+          ) : null}
+          <p className="telemetry-panel__designators">
+            <span
+              className="telemetry-panel__catalog-id"
+              data-testid="catalog-id"
+              title="NORAD catalog number: the permanent identifier assigned when the object was catalogued"
+            >
+              #{catalogId}
+            </span>
+            {telemetry.status === "ready" && telemetry.internationalDesignator !== undefined ? (
+              <span
+                className="telemetry-panel__intl-id"
+                data-testid="international-designator"
+                title="International designator (COSPAR ID): launch year, launch of that year, and piece"
+              >
+                {telemetry.internationalDesignator}
+              </span>
+            ) : null}
+          </p>
+        </div>
         <button type="button" className="telemetry-panel__close" onClick={onClose} aria-label="Close">
           ×
         </button>
