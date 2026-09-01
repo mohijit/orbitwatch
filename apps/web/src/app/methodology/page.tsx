@@ -143,6 +143,29 @@ export default function MethodologyPage() {
         what we use.
       </p>
 
+      <h2>Reading the sky chart</h2>
+      <p>
+        Expanding a pass draws it on the hemisphere of sky above you. The centre is
+        the zenith, straight overhead; the rim is the horizon; and the radius is linear
+        in angle, so a point halfway to the centre is 45° up. The rings are drawn at
+        30° and 60°.
+      </p>
+      <p>
+        <strong>North is at the top and east is at the right</strong> — the orientation
+        of a compass held flat. Star charts use the opposite convention, mirroring east
+        and west, because they depict the sky as seen looking up rather than the ground
+        as seen looking down. Both are correct; this one is chosen because the action
+        that follows reading the chart is turning to face a bearing. The chart labels
+        its cardinal points so the convention never has to be guessed.
+      </p>
+      <p>
+        The arc is drawn solid where the spacecraft is sunlit and dashed where it is in
+        Earth&rsquo;s shadow, with the crossing point marked. This matters more than it
+        sounds: a satellite entering the umbra partway across simply disappears while
+        still high in the sky, and a chart drawing one unbroken arc would be showing a
+        pass that does not happen.
+      </p>
+
       <h2>What this method does not tell you</h2>
       <ul className="prose-page__caveats">
         <li>

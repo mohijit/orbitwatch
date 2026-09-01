@@ -115,6 +115,75 @@ test("entering coordinates produces look angles and real passes", async ({ page 
   }
 });
 
+test("expanding a pass draws it on the sky", async ({ page }) => {
+  await open(page);
+  await setObserverManually(page);
+  await selectIss(page);
+
+  const passes = page.getByTestId("pass-list-item");
+  await expect(passes).toHaveCount(4, { timeout: 30_000 });
+
+  // Nothing is plotted until asked for. The arc costs sixty propagations and sixty
+  // shadow computations, and drawing four of them to show one is work nobody asked
+  // for.
+  await expect(page.getByTestId("sky-chart")).toHaveCount(0);
+
+  await page.getByTestId("pass-list-toggle").first().click();
+
+  const chart = page.getByTestId("sky-chart");
+  await expect(chart).toBeVisible();
+
+  // The plot is the accessible description too, so the assertion below checks the
+  // geometry the chart actually drew rather than that some SVG exists. These are the
+  // real fixture's numbers: the ISS rises in the northwest, peaks at 64 degrees in the
+  // northeast, and sets in the southeast.
+  const plot = chart.getByRole("img");
+  await expect(plot).toHaveAttribute("aria-label", /rises NW/);
+  await expect(plot).toHaveAttribute("aria-label", /peaks at 64 degrees NE/);
+  await expect(plot).toHaveAttribute("aria-label", /sets SE/);
+
+  // This pass is sunlit end to end, so the arc is a single lit run with no shadow
+  // segment and no entry marker. Drawing one anyway would be inventing an eclipse.
+  await expect(page.getByTestId("sky-chart-arc-lit")).toHaveCount(1);
+  await expect(page.getByTestId("sky-chart-arc-shadow")).toHaveCount(0);
+  await expect(page.getByTestId("sky-chart-shadow-entry")).toHaveCount(0);
+  await expect(page.getByTestId("sky-chart-max")).toBeVisible();
+
+  // The projection itself, not just that something was drawn. The peak is at 64
+  // degrees elevation bearing NE, so on a north-up east-right plot with radius linear
+  // in zenith angle it must land up and to the RIGHT of centre, a quarter of the way
+  // out. Mirroring east and west — the star-chart convention, and the single easiest
+  // way to get this wrong — puts it up and to the left and fails here. The centre is
+  // at 110 and the horizon radius is 88 in the SVG's own units.
+  const marker = page.getByTestId("sky-chart-max");
+  const cx = Number(await marker.getAttribute("cx"));
+  const cy = Number(await marker.getAttribute("cy"));
+  expect(cx).toBeGreaterThan(110); // east of centre
+  expect(cy).toBeLessThan(110); // north of centre
+  // r = (90 - 64.4) / 90 * 88 = 25.0
+  expect(Math.hypot(cx - 110, cy - 110)).toBeCloseTo(25.0, 0);
+
+  // Which convention the plot uses is stated, not assumed. North-up with east on the
+  // right is a compass orientation; star charts mirror it, and a reader who guesses
+  // wrong turns to face the wrong half of the sky.
+  await expect(chart).toContainText("North up, east right");
+  await expect(chart).toContainText("geometric");
+
+  // One chart at a time: opening another pass replaces it rather than accumulating.
+  await page.getByTestId("pass-list-toggle").nth(1).click();
+  await expect(page.getByTestId("sky-chart")).toHaveCount(1);
+  // Scoped to the chart: the page has another img role once Cesium paints its ion
+  // credit, and an unscoped getByRole("img") matches whichever loads first.
+  await expect(page.getByTestId("sky-chart").getByRole("img")).toHaveAttribute(
+    "aria-label",
+    /peaks at 15 degrees SSW/,
+  );
+
+  // And it collapses.
+  await page.getByTestId("pass-list-toggle").nth(1).click();
+  await expect(page.getByTestId("sky-chart")).toHaveCount(0);
+});
+
 test("the observing location survives a reload", async ({ page }) => {
   await open(page);
   await setObserverManually(page);

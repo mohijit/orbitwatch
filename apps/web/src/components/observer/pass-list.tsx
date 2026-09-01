@@ -1,6 +1,16 @@
 "use client";
 
-import { describeVisibility, type SatellitePass, type VisibilityClassification } from "@orbitwatch/orbit-core";
+import {
+  describeVisibility,
+  passSkyTrack,
+  type ObserverLocation,
+  type SatRec,
+  type SatellitePass,
+  type VisibilityClassification,
+} from "@orbitwatch/orbit-core";
+import { useMemo, useState } from "react";
+
+import { SkyChart } from "./sky-chart";
 
 /**
  * Upcoming passes over the observer.
@@ -16,11 +26,32 @@ import { describeVisibility, type SatellitePass, type VisibilityClassification }
  * someone standing outside needs, with the maximum elevation and its bearing alongside
  * — a pass peaking at 12° in the north is a very different proposition from one
  * passing overhead.
+ *
+ * EXPANDING A ROW DRAWS THE PASS
+ * A row tells you where to point; the sky chart tells you what the pass looks like.
+ * The arc is sampled on demand for the one expanded pass rather than for every row,
+ * because sixty propagations and sixty shadow computations per pass, across a day of
+ * passes, is a hundredfold more work than the prediction itself — to draw something
+ * that is only ever looked at one pass at a time.
  */
 
 export interface PassListProps {
   readonly passes: readonly SatellitePass[];
   readonly hasObserver: boolean;
+  /**
+   * Needed to plot a pass, not to list one.
+   *
+   * The list arrives already computed; the sky chart has to re-derive the arc, which
+   * needs the same element set and location the prediction used. Passing them rather
+   * than recomputing the passes here keeps one source of pass truth.
+   */
+  readonly satrec: SatRec | undefined;
+  readonly observer: ObserverLocation | undefined;
+}
+
+/** Passes are identified by AOS, which is unique per satellite per pass. */
+function passKey(pass: SatellitePass): string {
+  return pass.aos.time.toISOString();
 }
 
 const VISIBILITY_LABEL: Record<VisibilityClassification, string> = {
@@ -46,7 +77,17 @@ function formatDuration(seconds: number): string {
   return minutes === 0 ? `${whole}s` : `${minutes}m ${String(whole % 60).padStart(2, "0")}s`;
 }
 
-export function PassList({ passes, hasObserver }: PassListProps) {
+export function PassList({ passes, hasObserver, satrec, observer }: PassListProps) {
+  const [expandedKey, setExpandedKey] = useState<string | undefined>(undefined);
+
+  // Declared before the early returns below: hooks must run unconditionally, and the
+  // list has three states that return early.
+  const expanded = passes.find((pass) => passKey(pass) === expandedKey);
+  const track = useMemo(() => {
+    if (expanded === undefined || satrec === undefined || observer === undefined) return [];
+    return passSkyTrack(satrec, observer, expanded);
+  }, [expanded, satrec, observer]);
+
   if (!hasObserver) {
     return (
       <p className="pass-list__empty" data-testid="pass-list-no-observer">
@@ -65,8 +106,20 @@ export function PassList({ passes, hasObserver }: PassListProps) {
 
   return (
     <ol className="pass-list" data-testid="pass-list">
-      {passes.map((pass) => (
-        <li className="pass-list__item" key={pass.aos.time.toISOString()} data-testid="pass-list-item">
+      {passes.map((pass) => {
+        const key = passKey(pass);
+        const isExpanded = key === expandedKey;
+        return (
+        <li className="pass-list__item" key={key} data-testid="pass-list-item">
+          <button
+            type="button"
+            className="pass-list__row"
+            aria-expanded={isExpanded}
+            onClick={() => {
+              setExpandedKey(isExpanded ? undefined : key);
+            }}
+            data-testid="pass-list-toggle"
+          >
           <div className="pass-list__when">
             <span className="pass-list__day">{dayFormat.format(pass.aos.time)}</span>
             <span className="pass-list__times">
@@ -93,8 +146,12 @@ export function PassList({ passes, hasObserver }: PassListProps) {
           >
             {VISIBILITY_LABEL[pass.visibility]}
           </span>
+          </button>
+
+          {isExpanded ? <SkyChart pass={pass} track={track} /> : null}
         </li>
-      ))}
+        );
+      })}
     </ol>
   );
 }

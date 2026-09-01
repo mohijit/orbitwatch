@@ -19,7 +19,7 @@ import {
   sunAltitudeDegrees,
 } from "./illumination.js";
 import { azimuthToCompass, lookAnglesAt, observerAt } from "./look-angles.js";
-import { classifyVisibility, predictPasses } from "./passes.js";
+import { classifyVisibility, passSkyTrack, predictPasses } from "./passes.js";
 import { degrees, kilometers } from "./units.js";
 
 /**
@@ -564,6 +564,100 @@ describe("predictPasses", () => {
         "SATELLITE_IN_SHADOW",
       ]).toContain(pass.visibility);
     }
+  });
+});
+
+describe("passSkyTrack", () => {
+  const start = elements.epoch;
+  const end = new Date(start.getTime() + 48 * 60 * 60 * 1000);
+  const pass = predictPasses(satrec, SYDNEY, start, end, { minimumElevation: 10 })[0];
+
+  it("has a pass to sample", () => {
+    expect(pass).toBeDefined();
+  });
+
+  it("spans exactly AOS to LOS", () => {
+    const track = passSkyTrack(satrec, SYDNEY, pass!);
+    expect(track[0]?.time.getTime()).toBe(pass!.aos.time.getTime());
+    expect(track.at(-1)?.time.getTime()).toBe(pass!.los.time.getTime());
+  });
+
+  it("samples monotonically in time", () => {
+    const track = passSkyTrack(satrec, SYDNEY, pass!, { samples: 20 });
+    expect(track).toHaveLength(20);
+    for (let index = 1; index < track.length; index += 1) {
+      expect(track[index]!.time.getTime()).toBeGreaterThan(track[index - 1]!.time.getTime());
+    }
+  });
+
+  it("stays above the horizon throughout, because a pass is by definition above it", () => {
+    const track = passSkyTrack(satrec, SYDNEY, pass!);
+    for (const point of track) {
+      // A small negative tolerance at the endpoints: AOS and LOS are the threshold
+      // crossings themselves, refined to within half a second.
+      expect(point.elevation).toBeGreaterThan(-0.1);
+      expect(point.azimuth).toBeGreaterThanOrEqual(0);
+      expect(point.azimuth).toBeLessThan(360);
+    }
+  });
+
+  it("rises to the pass maximum and falls again", () => {
+    const track = passSkyTrack(satrec, SYDNEY, pass!);
+    const peak = Math.max(...track.map((point) => point.elevation));
+
+    // The sampled peak cannot exceed the ternary-searched maximum by more than
+    // rounding, and must come close to it — if the two disagreed materially, one of
+    // the two code paths would be computing a different geometry from the other.
+    expect(peak).toBeLessThanOrEqual(pass!.maximum.elevation + 0.01);
+    expect(peak).toBeGreaterThan(pass!.maximum.elevation - 1);
+
+    const peakIndex = track.findIndex((point) => point.elevation === peak);
+    expect(peakIndex).toBeGreaterThan(0);
+    expect(peakIndex).toBeLessThan(track.length - 1);
+  });
+
+  it("agrees with lookAnglesAt at the same instants", () => {
+    // The track must not be a separate, subtly different geometry chain from the one
+    // the live look-angle instrument uses.
+    const track = passSkyTrack(satrec, SYDNEY, pass!, { samples: 5 });
+    for (const point of track) {
+      const direct = lookAnglesAt(satrec, SYDNEY, point.time);
+      expect(direct?.azimuth).toBeCloseTo(point.azimuth, 9);
+      expect(direct?.elevation).toBeCloseTo(point.elevation, 9);
+    }
+  });
+
+  it("refuses a sample count that cannot describe an arc", () => {
+    expect(() => passSkyTrack(satrec, SYDNEY, pass!, { samples: 1 })).toThrow(RangeError);
+  });
+
+  it("reports a satellite entering Earth's shadow partway across the sky", () => {
+    // A real ISS pass from the elements above: it climbs to 88 degrees — very nearly
+    // overhead — and crosses from sunlight through penumbra into umbra before setting.
+    // This is the case a per-pass illumination value cannot express and a sky chart
+    // must draw: the satellite vanishes while still high in the sky, and a uniform arc
+    // would depict a pass that does not happen.
+    const all = predictPasses(satrec, SYDNEY, start, end, { minimumElevation: 10 });
+    const eclipsed = all.find((candidate) =>
+      candidate.aos.time.toISOString().startsWith("2020-06-01T08:56"),
+    );
+    expect(eclipsed).toBeDefined();
+    expect(eclipsed!.maximum.elevation).toBeGreaterThan(80);
+
+    const track = passSkyTrack(satrec, SYDNEY, eclipsed!);
+    const states = track.map((point) => point.illumination);
+    expect(new Set(states)).toEqual(new Set(["SUNLIT", "PENUMBRA", "UMBRA"]));
+
+    // Illumination decays in one direction: once in shadow it does not come back
+    // within a single pass. A track that flickered would mean the shadow computation
+    // was being fed inconsistent positions.
+    const firstUmbra = states.indexOf("UMBRA");
+    expect(firstUmbra).toBeGreaterThan(0);
+    expect(states.slice(firstUmbra).every((state) => state === "UMBRA")).toBe(true);
+    expect(states.indexOf("SUNLIT")).toBe(0);
+
+    // It goes dark well above the horizon, which is the whole point of plotting it.
+    expect(track[firstUmbra]!.elevation).toBeGreaterThan(10);
   });
 });
 

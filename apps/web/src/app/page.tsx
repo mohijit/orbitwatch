@@ -154,6 +154,8 @@ export default function HomePage() {
         <PassList
           passes={observerTelemetry.passes}
           hasObserver={observer.location !== undefined}
+          satrec={telemetry.status === "ready" ? telemetry.satrec : undefined}
+          observer={observer.location}
         />
       </TelemetryPanel>
 

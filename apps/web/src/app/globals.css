@@ -386,6 +386,60 @@ html, body {
 .pass-list__visibility--satellite-in-shadow { color: var(--ow-text-muted); }
 .pass-list__visibility--not-optically-favourable { color: var(--ow-text-muted); }
 
+/*
+ * The whole row is the control. A separate "expand" affordance would put a small hit
+ * target next to a large inert one, which is worse on a phone than making the row
+ * itself pressable.
+ */
+.pass-list__row {
+  /*
+   * A real grid, not `display: contents`. Contents would let the row's children take
+   * part in the list item's own grid, which lays out identically — but Chrome and
+   * Safari drop a `display: contents` button out of the accessibility tree entirely,
+   * so the control would be invisible to a screen reader and to keyboard focus.
+   */
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pass-list__row:focus-visible { outline: 2px solid var(--ow-accent); outline-offset: 2px; }
+.pass-list__item:hover { background: rgba(53, 200, 245, 0.05); }
+
+.sky-chart { margin: 0.5rem 0 0.25rem; }
+.sky-chart__svg { display: block; width: 100%; max-width: 15rem; margin: 0 auto; }
+.sky-chart__horizon { fill: rgba(53, 200, 245, 0.04); stroke: var(--ow-border); stroke-width: 1; }
+.sky-chart__ring { fill: none; stroke: var(--ow-border); stroke-width: 0.6; stroke-dasharray: 2 3; }
+.sky-chart__ring-label { fill: var(--ow-text-muted); font-size: 6px; font-family: ui-monospace, monospace; }
+.sky-chart__cardinal { fill: var(--ow-text-muted); font-size: 8px; font-weight: 600; }
+
+.sky-chart__arc { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sky-chart__arc--lit { stroke: #4ade80; }
+/* Dashed AND dimmed: the difference must survive being printed, or seen by someone
+   who cannot distinguish the two colours. */
+.sky-chart__arc--shadow { stroke: var(--ow-text-muted); stroke-dasharray: 3 3; opacity: 0.7; }
+
+.sky-chart__marker { stroke-width: 1.2; }
+.sky-chart__marker--aos { fill: var(--ow-bg); stroke: #4ade80; }
+.sky-chart__marker--los { fill: var(--ow-bg); stroke: var(--ow-text-muted); }
+.sky-chart__marker--max { fill: var(--ow-accent); stroke: var(--ow-bg); }
+.sky-chart__marker--shadow { fill: var(--ow-bg); stroke: #facc15; }
+
+.sky-chart__caption { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.35rem; font-size: 0.62rem; color: var(--ow-text-muted); }
+.sky-chart__legend { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.sky-chart__key { display: inline-block; width: 0.7rem; height: 0; border-top-width: 2px; border-top-style: solid; }
+.sky-chart__key--lit { border-top-color: #4ade80; }
+.sky-chart__key--shadow { border-top-color: var(--ow-text-muted); border-top-style: dashed; margin-left: 0.4rem; }
+.sky-chart__orientation { line-height: 1.35; }
+.sky-chart__empty { margin: 0.4rem 0 0; font-size: 0.65rem; color: var(--ow-text-muted); }
+
 /* ── M4: visible tonight ───────────────────────────────────────────────────────── */
 
 .tonight-panel {

@@ -80,11 +80,14 @@ export {
 export {
   classifyVisibility,
   describeVisibility,
+  passSkyTrack,
   predictPasses,
   NO_PASSES,
   type PassPoint,
   type PassPredictionOptions,
   type SatellitePass,
+  type SkyTrackOptions,
+  type SkyTrackPoint,
   type VisibilityClassification,
 } from "./passes.js";
 

@@ -370,5 +370,85 @@ export function describeVisibility(classification: VisibilityClassification): st
   }
 }
 
+/**
+ * One sampled instant along a pass, for plotting the arc across the sky.
+ *
+ * `illumination` is carried per point rather than once per pass because it changes
+ * DURING a pass, and that change is the most consequential thing a sky chart can show:
+ * a satellite that enters Earth's umbra halfway across simply vanishes, mid-sky, while
+ * still well above the horizon. A chart drawing one uniform arc would show a pass that
+ * does not happen. `undefined` means the satellite could not be propagated at that
+ * instant, which is distinct from "in shadow" and must not be drawn as either.
+ */
+export interface SkyTrackPoint {
+  readonly time: Date;
+  readonly azimuth: Degrees;
+  readonly compass: CompassPoint;
+  readonly elevation: Degrees;
+  readonly range: Kilometers;
+  readonly illumination: IlluminationState | undefined;
+}
+
+/**
+ * How many points to sample along a pass arc.
+ *
+ * A LEO pass lasts up to about ten minutes, so 60 samples put a point every ten
+ * seconds or better. That is far finer than a polar plot a few hundred pixels across
+ * can resolve, and it keeps the shadow-entry point — the one place where a coarse
+ * sample is visibly wrong — accurate to a few seconds.
+ */
+const DEFAULT_SKY_TRACK_SAMPLES = 60;
+
+export interface SkyTrackOptions extends PropagateOptions {
+  readonly samples?: number;
+}
+
+/**
+ * Sample a pass at regular intervals between AOS and LOS, for a sky chart.
+ *
+ * Separate from `predictPasses` on purpose. Prediction runs over hours and, in
+ * "Visible Tonight", over a whole group of objects; attaching sixty propagations and
+ * sixty shadow computations to every pass found would multiply that cost by two orders
+ * of magnitude to produce data that is only ever needed for the one pass a user is
+ * actually looking at. This is computed on demand for that pass alone.
+ *
+ * Endpoints are included, so the returned track starts at AOS and ends at LOS.
+ */
+export function passSkyTrack(
+  satrec: SatRec,
+  observer: ObserverLocation,
+  pass: SatellitePass,
+  options: SkyTrackOptions = {},
+): readonly SkyTrackPoint[] {
+  const { samples = DEFAULT_SKY_TRACK_SAMPLES, ...propagateOptions } = options;
+  if (samples < 2) {
+    throw new RangeError("A sky track needs at least two samples");
+  }
+
+  const start = pass.aos.time.getTime();
+  const end = pass.los.time.getTime();
+  const step = (end - start) / (samples - 1);
+
+  const track: SkyTrackPoint[] = [];
+  for (let index = 0; index < samples; index += 1) {
+    const time = new Date(start + step * index);
+    const angles = lookAnglesAt(satrec, observer, time, propagateOptions);
+    // A satellite that stops propagating mid-pass yields no point at all rather than
+    // an interpolated one: a gap in the arc is honest, an invented point is not.
+    if (angles === undefined) continue;
+
+    track.push({
+      time,
+      azimuth: angles.azimuth,
+      compass: angles.compass,
+      elevation: angles.elevation,
+      range: angles.range,
+      illumination: illuminationAt(satrec, time, propagateOptions)?.state,
+    });
+  }
+
+  return track;
+}
+
 /** Build an observer-agnostic empty result, for UI states with no location set. */
 export const NO_PASSES: readonly SatellitePass[] = [];
