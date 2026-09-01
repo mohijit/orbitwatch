@@ -412,6 +412,35 @@ describe("OrbitWatch API", () => {
         hoursAgo(1).toISOString(),
       );
     });
+
+    it("compresses the catalog response when the client accepts it", async () => {
+      // At full catalog size this response is 10.9 MB of highly repetitive JSON that
+      // gzip takes to 1.5 MB. Serving it uncompressed is several seconds of transfer
+      // on a real connection, so the encoding is asserted rather than assumed.
+      // Enough objects to clear the 1 KB threshold; below it, not compressing is the
+      // correct behaviour and the assertion would be testing nothing.
+      const ids = Array.from({ length: 40 }, (_, index) => String(40000 + index));
+      await database.satellites.upsertMany(
+        ids.map((catalogId) => ({ ...SATELLITE, catalogId })),
+      );
+      await database.elements.insertMany(
+        ids.map((catalogId) => elementSet(hoursAgo(1), { catalogId })),
+      );
+
+      const compressed = await app.inject({
+        url: "/catalog/elements",
+        headers: { "accept-encoding": "gzip" },
+      });
+      expect(compressed.headers["content-encoding"]).toBe("gzip");
+
+      // A client that cannot decompress must still get usable JSON, not a gzip stream.
+      const plain = await app.inject({
+        url: "/catalog/elements",
+        headers: { "accept-encoding": "identity" },
+      });
+      expect(plain.headers["content-encoding"]).toBeUndefined();
+      expect(catalogElementsResponseSchema.parse(plain.json()).count).toBe(40);
+    });
   });
 
   // ── providers ────────────────────────────────────────────────────────────

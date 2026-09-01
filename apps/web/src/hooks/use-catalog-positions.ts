@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { fetchCatalogElements } from "../lib/api-client";
+import { catalogElementsUrl } from "../lib/api-client";
 
 /**
  * Fields per object in the worker's position buffer:
@@ -19,7 +19,7 @@ export const POSITION_FIELDS = 7;
 /**
  * Whole-catalog positions, propagated in a Web Worker.
  *
- * Fetches current elements once from the API, hands them to the worker, and then
+ * The worker fetches the catalog itself (see propagation.worker.ts) and then
  * propagates whenever `time` changes. `time` is a prop rather than an internal clock
  * so the timeline can drive propagation to a past instant (SIMULATION) or let it run
  * forward from now (LIVE) — the worker does not know or care which.
@@ -69,6 +69,7 @@ export function useCatalogPositions(time: number): CatalogTickState {
       const message = event.data as
         | { type: "catalogIds"; ids: readonly string[] }
         | { type: "ready"; count: number; failed: number }
+        | { type: "error"; message: string }
         | { type: "positions"; buffer: ArrayBuffer; time: number };
 
       if (message.type === "catalogIds") {
@@ -82,6 +83,8 @@ export function useCatalogPositions(time: number): CatalogTickState {
             `${message.failed} of ${message.count + message.failed} elements failed to parse`,
           );
         }
+      } else if (message.type === "error") {
+        setState({ status: "failed", message: message.message });
       } else if (message.type === "positions") {
         setState({
           status: "ready",
@@ -94,25 +97,7 @@ export function useCatalogPositions(time: number): CatalogTickState {
       }
     });
 
-    void (async () => {
-      try {
-        const catalog = await fetchCatalogElements();
-        if (disposed) return;
-        worker.postMessage({
-          type: "init",
-          elements: catalog.elements.map((element) => ({
-            catalogId: element.catalogId,
-            omm: element.omm,
-          })),
-        });
-      } catch (error) {
-        if (disposed) return;
-        setState({
-          status: "failed",
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    })();
+    worker.postMessage({ type: "init", url: catalogElementsUrl() });
 
     return () => {
       disposed = true;

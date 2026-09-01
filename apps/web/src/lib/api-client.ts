@@ -1,8 +1,6 @@
 import {
-  catalogElementsResponseSchema,
   elementsResponseSchema,
   satelliteListResponseSchema,
-  type CatalogElementsResponse,
   type ElementsResponse,
   type SatelliteListResponse,
 } from "@orbitwatch/contracts";
@@ -18,6 +16,19 @@ import {
 
 function baseUrl(): string {
   return process.env["NEXT_PUBLIC_API_BASE_URL"] ?? "http://localhost:3333";
+}
+
+/**
+ * Absolute URL of the whole-catalog endpoint.
+ *
+ * Exposed as a URL rather than a fetch because the propagation worker fetches this
+ * one itself. At 16,468 objects the response is 10.9 MB, and decoding it, validating
+ * it and building satrecs from it is over a second of work that has no business on
+ * the main thread while Cesium is starting up. Everything else here is small enough
+ * that a normal fetch is the simpler choice.
+ */
+export function catalogElementsUrl(): string {
+  return new URL("/catalog/elements", baseUrl()).toString();
 }
 
 export class ApiError extends Error {
@@ -47,11 +58,6 @@ async function getJson(path: string, params?: Record<string, string>): Promise<u
     );
   }
   return body;
-}
-
-/** Current elements for the whole catalog. Drives the globe's point cloud. */
-export async function fetchCatalogElements(): Promise<CatalogElementsResponse> {
-  return catalogElementsResponseSchema.parse(await getJson("/catalog/elements"));
 }
 
 /** Search and filter the catalog. Drives the command palette. */
