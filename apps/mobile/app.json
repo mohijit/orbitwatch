@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "OrbitWatch",
+    "slug": "orbitwatch",
+    "scheme": "orbitwatch",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#070b14",
+    "newArchEnabled": true,
+    "android": {
+      "package": "dev.orbitwatch.app",
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#070b14"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "dev.orbitwatch.app",
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "OrbitWatch uses your location to compute which satellites pass overhead and where to look for them. It is used on the device and is never sent to a server."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d98c8542-7dc0-44f2-842b-7c9b629879b9"
+      }
+    }
+  }
+}
