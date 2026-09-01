@@ -12,6 +12,8 @@ import type {
   SatelliteFilter,
   SatelliteRecord,
   SatelliteRepository,
+  SatelliteGroupMembership,
+  SatelliteGroupRepository,
 } from "./repositories.js";
 
 /**
@@ -31,6 +33,7 @@ import type {
 export class InMemoryDatabase implements Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
+  readonly groups: SatelliteGroupRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -38,6 +41,8 @@ export class InMemoryDatabase implements Database {
   readonly #elements: OrbitalElementRecord[] = [];
   readonly #runs: ProviderRunRecord[] = [];
   readonly #leases = new Map<string, { holder: string; expiresAt: Date }>();
+  /** Keyed `provider|group|catalogId`; none of the three can contain a pipe. */
+  readonly #groups = new Map<string, SatelliteGroupMembership>();
   #nextId = 1;
   readonly #now: () => Date;
 
@@ -45,6 +50,7 @@ export class InMemoryDatabase implements Database {
     this.#now = options.now ?? (() => new Date());
     this.satellites = this.#createSatelliteRepository();
     this.elements = this.#createElementRepository();
+    this.groups = this.#createGroupRepository();
     this.providerRuns = this.#createProviderRunRepository();
     this.leases = this.#createLeaseRepository();
   }
@@ -336,6 +342,50 @@ export class InMemoryDatabase implements Database {
           if (best === undefined || isLaterRun(run, best)) best = run;
         }
         return best;
+      },
+    };
+  }
+
+  #createGroupRepository(): SatelliteGroupRepository {
+    const groups = this.#groups;
+    const key = (provider: string, group: string, catalogId: string): string =>
+      `${provider}|${group}|${catalogId}`;
+
+    return {
+      record: async (provider, groupName, catalogIds, seenAt) => {
+        let added = 0;
+        let refreshed = 0;
+        for (const catalogId of catalogIds) {
+          const composite = key(provider, groupName, catalogId);
+          const existing = groups.get(composite);
+          if (existing === undefined) {
+            groups.set(composite, {
+              catalogId,
+              provider,
+              groupName,
+              firstSeenAt: seenAt,
+              lastSeenAt: seenAt,
+            });
+            added += 1;
+          } else {
+            // firstSeenAt is never moved forward: it records when membership began.
+            groups.set(composite, { ...existing, lastSeenAt: seenAt });
+            refreshed += 1;
+          }
+        }
+        return { added, refreshed };
+      },
+
+      members: async (provider, groupName, options = {}) => {
+        const since = options.seenSince;
+        return [...groups.values()]
+          .filter(
+            (member) =>
+              member.provider === provider &&
+              member.groupName === groupName &&
+              (since === undefined || member.lastSeenAt.getTime() >= since.getTime()),
+          )
+          .sort((a, b) => (a.catalogId < b.catalogId ? -1 : a.catalogId > b.catalogId ? 1 : 0));
       },
     };
   }

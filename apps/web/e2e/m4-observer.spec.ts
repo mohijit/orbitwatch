@@ -17,10 +17,11 @@ import { FIXTURE_OBJECT_COUNT, PINNED_CLOCK } from "./fixture";
  * displayed time machine-dependent.
  *
  * The expected values below were computed from the committed fixture's real ISS
- * elements at the pinned instant, and are checked against physics rather than against
- * a previous run: at 09:00 local the sun is up, so daytime passes are classified
- * DAYLIGHT however bright the spacecraft is, and the 18:39 local pass is the only one
- * where the observer is in twilight while the satellite is still sunlit.
+ * elements at the pinned instant and are checked against physics, not against a
+ * previous run. The pinned instant is mid-morning in Sydney, so the sun is up and every
+ * ISS pass in the next day is classified DAYLIGHT however bright the spacecraft is.
+ * The sunlit-satellite-in-a-dark-sky case is exercised in visible-tonight.spec.ts,
+ * which is where that geometry actually occurs.
  */
 
 test.use({ timezoneId: "Australia/Sydney" });
@@ -42,6 +43,12 @@ async function selectIss(page: Page): Promise<void> {
   await page.getByPlaceholder(/search by name/i).fill("ISS");
   await page.getByText("ISS (ZARYA)", { exact: true }).click();
   await expect(page.getByTestId("telemetry-panel")).toContainText("#25544");
+
+  // The catalog id is in the panel HEADER, which renders while the elements are still
+  // being fetched. Everything below — look angles, passes — needs the telemetry to be
+  // ready, so wait for the badge that only appears then. Without this the assertions
+  // race the fetch, and under a loaded suite the fetch loses.
+  await expect(page.getByTestId("accuracy-badge")).toBeVisible({ timeout: 60_000 });
 }
 
 async function setObserverManually(page: Page): Promise<void> {
@@ -70,39 +77,42 @@ test("entering coordinates produces look angles and real passes", async ({ page 
   await expect(page.getByTestId("observer-summary")).toContainText("33.8688° S");
   await expect(page.getByTestId("observer-summary")).toContainText("151.2093° E");
 
-  // 09:00 local on 1 September: the sun is well up, so the sky must read DAYLIGHT.
-  // This is the observer-side half of the visibility rule, computed from the pinned
-  // instant and the entered coordinate.
+  // Mid-morning local: the sun is well up, so the sky must read DAYLIGHT. This is the
+  // observer-side half of the visibility rule, computed from the pinned instant and the
+  // entered coordinate.
   await expect(page.getByTestId("observer-sky")).toContainText("Daylight");
-  await expect(page.getByTestId("observer-sun-altitude")).toContainText("+30.8°");
+  await expect(page.getByTestId("observer-sun-altitude")).toContainText("+22.9°");
 
   await selectIss(page);
 
   // Look angles: a real azimuth with a compass bearing, a real elevation, a range in
-  // the low thousands of km, and a signed range rate. The ISS is just above the
-  // eastern horizon at this instant and receding.
+  // the low thousands of km, and a signed range rate. At this instant the ISS is just
+  // BELOW the eastern horizon and receding — which the panel must state plainly rather
+  // than hide, because the geometry is real even when the line of sight is not.
   const azimuth = page.getByTestId("look-angles-azimuth");
-  await expect(azimuth).toContainText("98.3°");
+  await expect(azimuth).toContainText("97.8°", { timeout: 30_000 });
   await expect(azimuth).toContainText("E");
-  await expect(page.getByTestId("look-angles-elevation")).toHaveText("2.9°");
-  await expect(page.getByTestId("look-angles-range")).toContainText("2,088 km");
+  await expect(page.getByTestId("look-angles-elevation")).toHaveText("-1.5°");
+  await expect(page.getByTestId("look-angles-range")).toContainText("2,565 km");
   await expect(page.getByTestId("look-angles-range-rate")).toContainText("receding");
-  await expect(page.getByTestId("look-angles-horizon")).toHaveText("Above the horizon");
+  await expect(page.getByTestId("look-angles-horizon")).toHaveText("Below the horizon");
 
   // Passes: four in the next 24 hours over this location, which is what the real
   // elements give. A pass list that silently returned nothing would be the easy bug.
   const passes = page.getByTestId("pass-list-item");
-  await expect(passes).toHaveCount(4);
+  await expect(passes).toHaveCount(4, { timeout: 30_000 });
 
   // Every pass must state a maximum elevation and a visibility classification --
   // never a bare time, which would imply the pass is worth going outside for.
-  await expect(page.getByTestId("pass-max-elevation").first()).toContainText("max 65°");
-  await expect(page.getByTestId("pass-visibility").first()).toHaveText("Daylight");
+  await expect(page.getByTestId("pass-max-elevation").first()).toContainText("max 64°");
 
-  // The evening pass is the only one where the observer is in twilight while the
-  // spacecraft is still lit. That is the entire naked-eye visibility rule, and it
-  // must not be reported for the daytime passes.
-  await expect(page.getByTestId("pass-visibility").nth(3)).toHaveText("Possibly visible");
+  // All four fall in daylight at this location, and a 64-degree overhead pass is
+  // classified no differently from a 15-degree one: how bright the sky is decides
+  // this, not how good the geometry is. Reporting any of them as visible would be the
+  // failure.
+  for (const index of [0, 1, 2, 3]) {
+    await expect(page.getByTestId("pass-visibility").nth(index)).toHaveText("Daylight");
+  }
 });
 
 test("the observing location survives a reload", async ({ page }) => {

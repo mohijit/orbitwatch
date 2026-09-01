@@ -219,10 +219,54 @@ export interface IngestionLeaseRepository {
   release(resourceKey: string, holder: string): Promise<void>;
 }
 
+/**
+ * Membership of a provider-published group, e.g. CelesTrak's `visual`.
+ *
+ * `lastSeenAt` is the useful half: membership changes, and an object that has dropped
+ * out of a group must stop being presented as one of its members.
+ */
+export interface SatelliteGroupMembership {
+  readonly catalogId: CatalogId;
+  readonly provider: string;
+  readonly groupName: string;
+  readonly firstSeenAt: Date;
+  readonly lastSeenAt: Date;
+}
+
+export interface SatelliteGroupRepository {
+  /**
+   * Record the full membership of a group as of one ingestion run.
+   *
+   * Takes the WHOLE list, not additions, because that is what the provider publishes
+   * and it is the only way to notice a departure. `seenAt` is the run's fetch time
+   * rather than now(), so a replayed or delayed run does not claim fresher knowledge
+   * than it has.
+   */
+  record(
+    provider: string,
+    groupName: string,
+    catalogIds: readonly CatalogId[],
+    seenAt: Date,
+  ): Promise<{ readonly added: number; readonly refreshed: number }>;
+
+  /**
+   * Members of a group, optionally only those still listed as of `since`.
+   *
+   * The filter is how a caller avoids offering an object that has silently left the
+   * group: pass the start of the most recent successful run for that resource.
+   */
+  members(
+    provider: string,
+    groupName: string,
+    options?: { readonly seenSince?: Date },
+  ): Promise<readonly SatelliteGroupMembership[]>;
+}
+
 /** Everything the application needs from storage, in one place. */
 export interface Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
+  readonly groups: SatelliteGroupRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
   /** Run migrations. Safe to call repeatedly; already-applied ones are skipped. */

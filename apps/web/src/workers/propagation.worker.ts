@@ -3,12 +3,23 @@
 import { catalogElementsResponseSchema } from "@orbitwatch/contracts";
 import {
   ElementParseError,
+  degrees,
+  kilometers,
+  nextDarkness,
   parseOmm,
+  predictPasses,
   propagateManyAt,
   type CatalogId,
   type OMMJsonObject,
   type SatRec,
 } from "@orbitwatch/orbit-core";
+
+import type {
+  PassEndpoint,
+  VisiblePass,
+  VisibleTonightRequest,
+  VisibleTonightResult,
+} from "./pass-messages";
 
 /**
  * Whole-catalog SGP4 propagation, off the main thread.
@@ -75,10 +86,13 @@ interface TickMessage {
   readonly time: number;
 }
 
-type InboundMessage = InitMessage | TickMessage;
+type InboundMessage = InitMessage | TickMessage | VisibleTonightRequest;
 
 let satrecs: SatRec[] = [];
 let catalogIds: CatalogId[] = [];
+let names: string[] = [];
+/** catalogId -> index, so a pass request does not scan the catalog per object. */
+let indexById = new Map<string, number>();
 
 async function handleInit(message: InitMessage): Promise<void> {
   let elements: readonly { readonly catalogId: string; readonly omm: unknown }[];
@@ -105,6 +119,7 @@ async function handleInit(message: InitMessage): Promise<void> {
 
   const parsedSatrecs: SatRec[] = [];
   const parsedIds: CatalogId[] = [];
+  const parsedNames: string[] = [];
   let failed = 0;
 
   for (const record of elements) {
@@ -112,6 +127,12 @@ async function handleInit(message: InitMessage): Promise<void> {
       const { satrec } = parseOmm(record.omm as OMMJsonObject);
       parsedSatrecs.push(satrec);
       parsedIds.push(satrec.satnum as CatalogId);
+      // Kept for the pass list, which names objects rather than numbering them. The
+      // OMM carries it, so there is no second lookup to make.
+      const omm = record.omm as { OBJECT_NAME?: unknown };
+      parsedNames.push(
+        typeof omm.OBJECT_NAME === "string" ? omm.OBJECT_NAME : String(satrec.satnum),
+      );
     } catch (error) {
       failed += 1;
       if (!(error instanceof ElementParseError)) {
@@ -124,6 +145,8 @@ async function handleInit(message: InitMessage): Promise<void> {
 
   satrecs = parsedSatrecs;
   catalogIds = parsedIds;
+  names = parsedNames;
+  indexById = new Map(parsedIds.map((catalogId, index) => [catalogId, index]));
 
   postMessage({ type: "catalogIds", ids: catalogIds });
   postMessage({ type: "ready", count: satrecs.length, failed });
@@ -153,8 +176,93 @@ function handleTick(message: TickMessage): void {
   postMessage({ type: "positions", buffer, time: message.time }, { transfer: [buffer.buffer] });
 }
 
+/**
+ * Pass search over a curated subset, for "Visible Tonight".
+ *
+ * Runs here rather than on the main thread because it is seconds of straight-line
+ * SGP4, and the globe is animating throughout. It reuses the satrecs already parsed
+ * for the globe, so no elements are fetched twice.
+ *
+ * The subset matters more than the speed. Searching the whole catalog is affordable
+ * with a coarse pre-scan, but it produces thousands of "optically favourable" passes
+ * a night — every sunlit object above the horizon — because GP elements carry nothing
+ * about brightness. The caller passes CelesTrak's `visual` membership instead, which
+ * is the only published statement about which objects can actually be seen.
+ */
+function toEndpoint(point: {
+  time: Date;
+  azimuth: number;
+  compass: string;
+  elevation: number;
+  range: number;
+}): PassEndpoint {
+  return {
+    time: point.time,
+    azimuth: point.azimuth,
+    compass: point.compass,
+    elevation: point.elevation,
+    range: point.range,
+  };
+}
+
+function handleVisibleTonight(message: VisibleTonightRequest): void {
+  const observer = {
+    latitude: degrees(message.observer.latitude),
+    longitude: degrees(message.observer.longitude),
+    altitude: kilometers(message.observer.altitude),
+  };
+
+  const darkness = nextDarkness(observer, new Date(message.from));
+  if (darkness === undefined) {
+    // No darkness in the search horizon. A real answer about the sky, not a failure.
+    const result: VisibleTonightResult = { type: "visibleTonight", status: "no-darkness" };
+    postMessage(result);
+    return;
+  }
+
+  const found: VisiblePass[] = [];
+  let searched = 0;
+
+  for (const catalogId of message.catalogIds) {
+    const index = indexById.get(catalogId);
+    // A group member with no element set in this catalog response is skipped rather
+    // than faked. `searched` reports how many were genuinely covered.
+    if (index === undefined) continue;
+    const satrec = satrecs[index];
+    if (satrec === undefined) continue;
+    searched += 1;
+
+    for (const pass of predictPasses(satrec, observer, darkness.start, darkness.end)) {
+      found.push({
+        catalogId,
+        name: names[index] ?? catalogId,
+        aos: toEndpoint(pass.aos),
+        maximum: toEndpoint(pass.maximum),
+        los: toEndpoint(pass.los),
+        durationSeconds: pass.durationSeconds,
+        minimumRange: pass.minimumRange,
+        visibility: pass.visibility,
+        illumination: pass.illumination,
+      });
+    }
+  }
+
+  found.sort((a, b) => a.aos.time.getTime() - b.aos.time.getTime());
+
+  const result: VisibleTonightResult = {
+    type: "visibleTonight",
+    status: "ok",
+    darkStart: darkness.start.getTime(),
+    darkEnd: darkness.end.getTime(),
+    searched,
+    passes: found,
+  };
+  postMessage(result);
+}
+
 self.addEventListener("message", (event: MessageEvent<InboundMessage>) => {
   const message = event.data;
   if (message.type === "init") void handleInit(message);
   else if (message.type === "tick") handleTick(message);
+  else if (message.type === "visibleTonight") handleVisibleTonight(message);
 });

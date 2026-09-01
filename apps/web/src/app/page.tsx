@@ -6,12 +6,14 @@ import { SatelliteGlobe } from "@/components/globe/satellite-globe";
 import { LookAnglesInstrument } from "@/components/observer/look-angles";
 import { ObserverPanel } from "@/components/observer/observer-panel";
 import { PassList } from "@/components/observer/pass-list";
+import { VisibleTonightPanel } from "@/components/observer/visible-tonight";
 import { CommandPalette } from "@/components/search/command-palette";
 import { TelemetryPanel } from "@/components/telemetry/telemetry-panel";
 import { Timeline, type TimelineMode } from "@/components/timeline/timeline";
 import { useCatalogPositions } from "@/hooks/use-catalog-positions";
 import { useObserver } from "@/hooks/use-observer";
 import { useObserverTelemetry } from "@/hooks/use-observer-telemetry";
+import { useVisualGroup } from "@/hooks/use-visual-group";
 import { useSelectedSatellite } from "@/hooks/use-selected-satellite";
 import { BRANDING } from "@/lib/branding";
 
@@ -38,7 +40,9 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [mode]);
 
-  const catalogState = useCatalogPositions(time);
+  const worker = useCatalogPositions(time);
+  const catalogState = worker.catalog;
+  const visualGroup = useVisualGroup();
   const telemetry = useSelectedSatellite(selectedCatalogId, time, mode);
   const observer = useObserver();
 
@@ -49,6 +53,48 @@ export default function HomePage() {
     observer.location,
     time,
   );
+
+  // Search once, when the observer, the group and the parsed catalog are all present.
+  // Keyed on the observer's coordinates rather than the object identity, so a
+  // re-render does not re-run seconds of SGP4 for the same location.
+  const observerKey =
+    observer.location === undefined
+      ? undefined
+      : `${observer.location.latitude},${observer.location.longitude},${observer.location.altitude}`;
+  const catalogReady = catalogState.status === "ready";
+  const groupIds = visualGroup.status === "ready" ? visualGroup.catalogIds : undefined;
+  const { requestVisibleTonight } = worker;
+
+  useEffect(() => {
+    if (observer.location === undefined || groupIds === undefined || !catalogReady) return;
+    requestVisibleTonight(
+      {
+        latitude: observer.location.latitude,
+        longitude: observer.location.longitude,
+        altitude: observer.location.altitude,
+      },
+      groupIds,
+      Date.now(),
+    );
+    // `time` and `observer.location` are deliberately absent from the deps. The search
+    // covers tonight, not this second, and re-running it every tick would burn seconds
+    // of propagation to produce an identical list; `observerKey` stands in for the
+    // location because it changes only when the coordinates do. Refresh is how a user
+    // asks for it again.
+  }, [observerKey, groupIds, catalogReady, requestVisibleTonight]);
+
+  const refreshVisibleTonight = (): void => {
+    if (observer.location === undefined || groupIds === undefined) return;
+    requestVisibleTonight(
+      {
+        latitude: observer.location.latitude,
+        longitude: observer.location.longitude,
+        altitude: observer.location.altitude,
+      },
+      groupIds,
+      Date.now(),
+    );
+  };
 
   const handleTimelineChange = (nextTime: number, nextMode: TimelineMode): void => {
     setTime(nextTime);
@@ -110,6 +156,15 @@ export default function HomePage() {
           hasObserver={observer.location !== undefined}
         />
       </TelemetryPanel>
+
+      <aside className="tonight-panel" aria-label="Visible tonight">
+        <VisibleTonightPanel
+          state={worker.visibleTonight}
+          hasObserver={observer.location !== undefined}
+          groupUnavailable={visualGroup.status === "unavailable"}
+          onRefresh={refreshVisibleTonight}
+        />
+      </aside>
 
       <Timeline time={time} mode={mode} onChange={handleTimelineChange} />
 

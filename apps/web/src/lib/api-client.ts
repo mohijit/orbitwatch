@@ -1,6 +1,8 @@
 import {
+  catalogGroupResponseSchema,
   elementsResponseSchema,
   satelliteListResponseSchema,
+  type CatalogGroupResponse,
   type ElementsResponse,
   type SatelliteListResponse,
 } from "@orbitwatch/contracts";
@@ -27,6 +29,19 @@ function baseUrl(): string {
  * the main thread while Cesium is starting up. Everything else here is small enough
  * that a normal fetch is the simpler choice.
  */
+/**
+ * Membership of a provider-published group, e.g. CelesTrak's `visual`.
+ *
+ * Catalog IDs only; the elements themselves already arrived with the catalog. A 404
+ * means the group has never been ingested, which is a different statement from an
+ * empty group and is surfaced as such rather than as "nothing is visible".
+ */
+export async function fetchCatalogGroup(group: string): Promise<CatalogGroupResponse> {
+  return catalogGroupResponseSchema.parse(
+    await getJson(`/catalog/groups/${encodeURIComponent(group)}`),
+  );
+}
+
 export function catalogElementsUrl(): string {
   return new URL("/catalog/elements", baseUrl()).toString();
 }

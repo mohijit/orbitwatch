@@ -21,7 +21,13 @@ import { runDatabaseContractTests } from "./database-contract.js";
 const TEST_URL = process.env["ORBITWATCH_TEST_DATABASE_URL"];
 
 /** Application tables, in no particular order — CASCADE handles the dependency. */
-const TABLES = ["orbital_elements", "satellites", "provider_runs", "ingestion_leases"];
+const TABLES = [
+  "satellite_groups",
+  "orbital_elements",
+  "satellites",
+  "provider_runs",
+  "ingestion_leases",
+];
 
 if (TEST_URL === undefined || TEST_URL === "") {
   describe("storage contract: PostgresDatabase", () => {

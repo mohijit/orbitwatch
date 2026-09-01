@@ -366,3 +366,104 @@ html, body {
 .pass-list__visibility--daylight { color: #f4a548; }
 .pass-list__visibility--satellite-in-shadow { color: var(--ow-text-muted); }
 .pass-list__visibility--not-optically-favourable { color: var(--ow-text-muted); }
+
+/* ── M4: visible tonight ───────────────────────────────────────────────────────── */
+
+.tonight-panel {
+  position: absolute;
+  top: 4rem;
+  left: 1rem;
+  z-index: 9;
+  width: 20rem;
+  max-height: calc(100dvh - 12rem);
+  overflow-y: auto;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 12px;
+  padding: 0.9rem;
+  backdrop-filter: blur(8px);
+}
+
+.visible-tonight__header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.visible-tonight__header .telemetry-panel__section-heading { margin: 0; }
+.visible-tonight__refresh {
+  background: none;
+  border: 1px solid var(--ow-border);
+  border-radius: 6px;
+  padding: 0.15rem 0.45rem;
+  color: var(--ow-text-muted);
+  font: inherit;
+  font-size: 0.65rem;
+  cursor: pointer;
+}
+.visible-tonight__refresh:disabled { opacity: 0.5; cursor: default; }
+
+.visible-tonight__empty { margin: 0.4rem 0 0; font-size: 0.72rem; line-height: 1.5; color: var(--ow-text-muted); }
+.visible-tonight__window { margin: 0.35rem 0 0.5rem; font-size: 0.68rem; color: var(--ow-text-muted); font-family: ui-monospace, monospace; }
+
+.visible-tonight__list { list-style: none; margin: 0; padding: 0; }
+.visible-tonight__item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.1rem 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--ow-border);
+  font-size: 0.73rem;
+  align-items: baseline;
+}
+.visible-tonight__item:last-child { border-bottom: none; }
+.visible-tonight__time { font-family: ui-monospace, monospace; color: var(--ow-accent); }
+.visible-tonight__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visible-tonight__grade { font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.visible-tonight__grade--likely { color: #4ade80; }
+.visible-tonight__grade--possible { color: #facc15; }
+.visible-tonight__geometry {
+  grid-column: 1 / -1;
+  color: var(--ow-text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.68rem;
+}
+
+.visible-tonight__method { margin: 0.6rem 0 0; font-size: 0.65rem; line-height: 1.5; color: var(--ow-text-muted); }
+.visible-tonight__method code { font-size: 0.95em; color: var(--ow-text); }
+
+/* ── prose pages (methodology, about) ──────────────────────────────────────────── */
+
+.prose-page {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+.prose-page__back { font-size: 0.8rem; margin: 0 0 2rem; }
+.prose-page__back a { color: var(--ow-accent); text-decoration: none; }
+.prose-page__back a:hover { text-decoration: underline; }
+.prose-page h1 { font-size: 1.6rem; margin: 0 0 0.75rem; letter-spacing: -0.01em; }
+.prose-page h2 { font-size: 1.05rem; margin: 2.2rem 0 0.6rem; letter-spacing: 0.01em; }
+.prose-page__lead { color: var(--ow-text-muted); font-size: 1rem; }
+.prose-page a { color: var(--ow-accent); }
+.prose-page code {
+  background: rgba(53, 200, 245, 0.1);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+
+.prose-page__terms dt { font-weight: 600; margin-top: 0.9rem; color: var(--ow-text); }
+.prose-page__terms dd { margin: 0.15rem 0 0; color: var(--ow-text-muted); }
+
+.prose-page__table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }
+.prose-page__table th, .prose-page__table td {
+  text-align: left;
+  padding: 0.5rem 0.6rem 0.5rem 0;
+  border-bottom: 1px solid var(--ow-border);
+  vertical-align: top;
+}
+.prose-page__table th { color: var(--ow-text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.prose-page__table td:last-child { color: var(--ow-text-muted); }
+
+.prose-page__caveats { padding-left: 1.1rem; }
+.prose-page__caveats li { margin-bottom: 0.7rem; color: var(--ow-text-muted); }
+.prose-page__caveats strong { color: var(--ow-text); }

@@ -11,8 +11,10 @@ import {
   type GroundTrackPoint,
 } from "./ground-track.js";
 import {
+  CIVIL_TWILIGHT_DEGREES,
   classifyShadow,
   illuminationAt,
+  nextDarkness,
   observerLighting,
   sunAltitudeDegrees,
 } from "./illumination.js";
@@ -562,5 +564,62 @@ describe("predictPasses", () => {
         "SATELLITE_IN_SHADOW",
       ]).toContain(pass.visibility);
     }
+  });
+});
+
+describe("nextDarkness", () => {
+  const sydney = {
+    latitude: degrees(-33.8688),
+    longitude: degrees(151.2093),
+    altitude: kilometers(0),
+  };
+
+  it("finds tonight's darkness and reports it in the right order", () => {
+    const window = nextDarkness(sydney, new Date("2026-09-02T09:00:00.000Z"));
+    expect(window).toBeDefined();
+    expect(window!.end.getTime()).toBeGreaterThan(window!.start.getTime());
+
+    // Sydney is UTC+10, so 09:00Z is 19:00 local: already past sunset in early
+    // September, and the window should therefore begin immediately.
+    expect(window!.start.toISOString()).toBe("2026-09-02T09:00:00.000Z");
+
+    // A September night at 34 degrees south is on the order of eleven hours from
+    // civil dusk to civil dawn. Anything wildly outside that is a broken calculation,
+    // not a seasonal quirk.
+    const hours = (window!.end.getTime() - window!.start.getTime()) / 3_600_000;
+    expect(hours).toBeGreaterThan(9);
+    expect(hours).toBeLessThan(13);
+  });
+
+  it("agrees with observerLighting at both ends", () => {
+    const window = nextDarkness(sydney, new Date("2026-09-02T09:00:00.000Z"));
+    // Just inside the window the sun must be below civil twilight; just outside it
+    // must not be. This is what stops the window and the classifier disagreeing about
+    // whether a pass happened in the dark.
+    const justInside = new Date(window!.end.getTime() - 120_000);
+    const justOutside = new Date(window!.end.getTime() + 120_000);
+    expect(sunAltitudeDegrees(sydney, justInside)).toBeLessThan(CIVIL_TWILIGHT_DEGREES);
+    expect(sunAltitudeDegrees(sydney, justOutside)).toBeGreaterThan(CIVIL_TWILIGHT_DEGREES);
+  });
+
+  it("returns undefined during polar day rather than inventing a night", () => {
+    // Longyearbyen in June: the sun does not set, and there is no darkness to offer.
+    // A fabricated window here would produce a Visible Tonight list for a bright sky.
+    const svalbard = {
+      latitude: degrees(78.22),
+      longitude: degrees(15.65),
+      altitude: kilometers(0),
+    };
+    expect(nextDarkness(svalbard, new Date("2026-06-21T00:00:00.000Z"))).toBeUndefined();
+  });
+
+  it("finds darkness at the same polar location in winter", () => {
+    const svalbard = {
+      latitude: degrees(78.22),
+      longitude: degrees(15.65),
+      altitude: kilometers(0),
+    };
+    const window = nextDarkness(svalbard, new Date("2026-12-21T00:00:00.000Z"));
+    expect(window).toBeDefined();
   });
 });

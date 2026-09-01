@@ -15,6 +15,7 @@ import type {
   SatelliteFilter,
   SatelliteRecord,
   SatelliteRepository,
+  SatelliteGroupRepository,
 } from "./repositories.js";
 
 /**
@@ -210,6 +211,7 @@ function chunk<T>(items: readonly T[], size: number): readonly (readonly T[])[] 
 export class PostgresDatabase implements Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
+  readonly groups: SatelliteGroupRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -221,6 +223,7 @@ export class PostgresDatabase implements Database {
     this.#config = config;
     this.satellites = createSatelliteRepository(sql);
     this.elements = createElementRepository(sql);
+    this.groups = createGroupRepository(sql);
     this.providerRuns = createProviderRunRepository(sql);
     this.leases = createLeaseRepository(sql);
   }
@@ -705,6 +708,75 @@ function createProviderRunRepository(sql: Sql): ProviderRunRepository {
 }
 
 // ── ingestion leases ─────────────────────────────────────────────────────────────
+
+function createGroupRepository(sql: Sql): SatelliteGroupRepository {
+  return {
+    async record(provider, groupName, catalogIds, seenAt) {
+      if (catalogIds.length === 0) return { added: 0, refreshed: 0 };
+
+      let added = 0;
+      let refreshed = 0;
+
+      // Chunked for the same reason element inserts are: a group is small today, but
+      // a parameter limit is not the place to discover that it grew.
+      for (const batch of chunk(catalogIds, WRITE_CHUNK_SIZE)) {
+        // json_to_recordset rather than sql(rows, ...columns): the same idiom the
+        // other bulk writes here use, and it keeps the parameter count constant
+        // regardless of batch size.
+        const payload = sql.json(
+          jsonRows(batch.map((catalogId) => ({ catalog_id: catalogId }))),
+        );
+
+        // xmax = 0 identifies a genuinely inserted row, which distinguishes a new
+        // member from a refreshed one without a second round trip. first_seen_at is
+        // deliberately never updated: it records when membership began.
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO satellite_groups (catalog_id, provider, group_name, first_seen_at, last_seen_at)
+          SELECT i.catalog_id, ${provider}, ${groupName}, ${seenAt}, ${seenAt}
+          FROM json_to_recordset(${payload}::json) AS i(catalog_id TEXT)
+          ON CONFLICT (catalog_id, provider, group_name) DO UPDATE
+            SET last_seen_at = EXCLUDED.last_seen_at
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) added += 1;
+          else refreshed += 1;
+        }
+      }
+
+      return { added, refreshed };
+    },
+
+    async members(provider, groupName, options = {}) {
+      const since = options.seenSince;
+      const rows = await sql<
+        {
+          catalog_id: string;
+          provider: string;
+          group_name: string;
+          first_seen_at: Date;
+          last_seen_at: Date;
+        }[]
+      >`
+        SELECT catalog_id, provider, group_name, first_seen_at, last_seen_at
+        FROM satellite_groups
+        WHERE provider = ${provider}
+          AND group_name = ${groupName}
+          ${since === undefined ? sql`` : sql`AND last_seen_at >= ${since}`}
+        ORDER BY catalog_id
+      `;
+
+      return rows.map((row) => ({
+        catalogId: row.catalog_id as CatalogId,
+        provider: row.provider,
+        groupName: row.group_name,
+        firstSeenAt: row.first_seen_at,
+        lastSeenAt: row.last_seen_at,
+      }));
+    },
+  };
+}
 
 function createLeaseRepository(sql: Sql): IngestionLeaseRepository {
   return {

@@ -105,6 +105,89 @@ export function observerLighting(
 }
 
 /**
+ * The next stretch of darkness at an observer's location.
+ *
+ * "Tonight" is not twenty-four hours, and pretending otherwise makes every pass search
+ * roughly twice the work it needs to be while offering people passes in broad daylight.
+ * This finds the next window in which the sun is below `sunBelowDegrees` — civil
+ * twilight by default, which is when the brighter satellites start to show.
+ *
+ * POLAR DAY IS A REAL ANSWER
+ * Above the Arctic and Antarctic circles there are weeks with no darkness at all, and
+ * at high-but-not-polar latitudes there are summer nights that never get past civil
+ * twilight. Returning `undefined` says so. Returning a fabricated window, or silently
+ * falling back to a fixed twelve hours, would produce a "Visible Tonight" list for a
+ * sky that never gets dark.
+ *
+ * The boundaries are found by coarse sampling and then bisected to the minute. The
+ * coarse step must stay well inside the shortest plausible night; ten minutes is safe
+ * everywhere the answer is not simply "no darkness".
+ */
+export interface DarknessWindow {
+  readonly start: Date;
+  readonly end: Date;
+}
+
+export function nextDarkness(
+  observer: ObserverLocation,
+  from: Date,
+  options: {
+    readonly sunBelowDegrees?: number;
+    readonly searchHours?: number;
+    readonly coarseStepMinutes?: number;
+  } = {},
+): DarknessWindow | undefined {
+  const {
+    sunBelowDegrees = CIVIL_TWILIGHT_DEGREES,
+    searchHours = 36,
+    coarseStepMinutes = 10,
+  } = options;
+
+  const isDark = (at: Date): boolean =>
+    sunAltitudeDegrees(observer, at) < sunBelowDegrees;
+
+  const stepMs = coarseStepMinutes * 60_000;
+  const deadline = from.getTime() + searchHours * 3_600_000;
+
+  /** Bisect a bracket known to straddle a transition, down to one minute. */
+  const refine = (before: number, after: number): Date => {
+    let low = before;
+    let high = after;
+    const darkAtLow = isDark(new Date(low));
+    while (high - low > 60_000) {
+      const middle = low + (high - low) / 2;
+      if (isDark(new Date(middle)) === darkAtLow) low = middle;
+      else high = middle;
+    }
+    return new Date(high);
+  };
+
+  let previous = from.getTime();
+  let previousDark = isDark(from);
+  let start: Date | undefined = previousDark ? from : undefined;
+
+  for (let at = previous + stepMs; at <= deadline; at += stepMs) {
+    const dark = isDark(new Date(at));
+
+    if (dark && !previousDark) {
+      start = refine(previous, at);
+    } else if (!dark && previousDark && start !== undefined) {
+      return { start, end: refine(previous, at) };
+    }
+
+    previous = at;
+    previousDark = dark;
+  }
+
+  // Darkness began but never ended inside the search horizon — polar night. Report the
+  // horizon as the end rather than claiming knowledge beyond where we looked.
+  if (start !== undefined) return { start, end: new Date(deadline) };
+
+  // The sun never went below the threshold: polar day, or a high-latitude summer.
+  return undefined;
+}
+
+/**
  * Greenwich Mean Sidereal Time in radians.
  *
  * Implemented here rather than reusing satellite.js `gstime` because that function

@@ -17,8 +17,9 @@ import {
  * propagates only index 0, and an API that ignores its own count. Everything here is
  * written to fail if the app regresses to handling a single object.
  *
- * The corpus is 32 real CelesTrak GP records, ingested by the real ingestion pipeline
- * (see apps/api/src/seed-dev.ts). Nothing in this file reaches a provider.
+ * The corpus is real CelesTrak GP records, ingested by the real ingestion pipeline
+ * (see apps/api/src/seed-dev.ts); its size is read from the fixture, never restated.
+ * Nothing in this file reaches a provider.
  *
  * HOW IT OBSERVES
  * Two pieces of instrumentation are installed before navigation, both of which wrap
@@ -52,6 +53,8 @@ interface TickSummary {
   readonly ok: number;
   /** Geocentric radius in km per object, in catalog order. */
   readonly radii: readonly number[];
+  /** Earth-fixed position in km per object, rounded, as "x,y,z". */
+  readonly places: readonly string[];
 }
 
 interface PointPrimitive {
@@ -99,20 +102,19 @@ async function instrument(page: Page): Promise<void> {
           const positions = new Float32Array(message.buffer);
           const slots = Math.floor(positions.length / POSITION_FIELDS);
           const radii: number[] = [];
+          const places: string[] = [];
           let ok = 0;
 
           for (let index = 0; index < slots; index += 1) {
             const offset = index * POSITION_FIELDS;
             if (positions[offset + 6] === 1) ok += 1;
-            radii.push(
-              Math.hypot(
-                positions[offset] as number,
-                positions[offset + 1] as number,
-                positions[offset + 2] as number,
-              ),
-            );
+            const x = positions[offset] as number;
+            const y = positions[offset + 1] as number;
+            const z = positions[offset + 2] as number;
+            radii.push(Math.hypot(x, y, z));
+            places.push(`${x.toFixed(0)},${y.toFixed(0)},${z.toFixed(0)}`);
           }
-          state.ticks.push({ slots, ok, radii });
+          state.ticks.push({ slots, ok, radii, places });
         });
       }
     }
@@ -212,10 +214,15 @@ test("every object is propagated to its own distinct position", async ({ page })
 
   const radii = tick?.radii ?? [];
 
-  // Distinct positions, not one object repeated. Rounding to a kilometre is far finer
+  // Distinct POSITIONS, not one object repeated. Rounding to a kilometre is far finer
   // than the separation between any two real objects here and far coarser than float32
   // noise, so equality at this precision means genuinely the same place.
-  const distinct = new Set(radii.map((radius) => radius.toFixed(0)));
+  //
+  // Compared in three dimensions, not by geocentric radius. Radius is a one-dimensional
+  // projection and objects genuinely share it: MMS 1, 2 and 3 fly in formation on the
+  // same orbit, so they sit at the same distance from Earth's centre while being in
+  // quite different places. Asserting on radius counted that as a duplicate.
+  const distinct = new Set(tick?.places ?? []);
   expect(distinct.size).toBe(FIXTURE_OBJECT_COUNT);
 
   // The corpus spans LEO through the geosynchronous belt by construction, so the
@@ -303,18 +310,25 @@ test("search filters the corpus instead of returning everything", async ({ page 
   await page.getByRole("button", { name: /search satellites/i }).click();
   const input = page.getByPlaceholder(/search by name/i);
 
-  // Three real NAVSTAR objects are in the corpus and 29 other objects are not, so a
-  // search that ignored its term, or one that only ever considered a single object,
-  // both fail this.
+  // Expected matches are derived from the corpus rather than named, so a re-export
+  // cannot leave this asserting objects that are no longer there. The term still has
+  // to do real work: several objects match and the rest of the corpus must not.
+  const navstars = FIXTURE_RECORDS.map((record) => record.OBJECT_NAME).filter((name) =>
+    name.includes("NAVSTAR"),
+  );
+  expect(navstars.length).toBeGreaterThan(1);
+  expect(navstars.length).toBeLessThan(FIXTURE_OBJECT_COUNT);
+
   await input.fill("NAVSTAR");
-  await expect(page.getByText("NAVSTAR 43 (USA 132)", { exact: true })).toBeVisible({
+  await expect(page.getByText(navstars[0] as string, { exact: true })).toBeVisible({
     timeout: 10_000,
   });
-  await expect(page.getByText("NAVSTAR 48 (USA 151)", { exact: true })).toBeVisible();
-  await expect(page.getByText("NAVSTAR 49 (USA 154)", { exact: true })).toBeVisible();
+  for (const name of navstars.slice(1)) {
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+  }
   await expect(page.getByText("ISS (ZARYA)", { exact: true })).toBeHidden();
 
   await input.fill("ISS");
   await expect(page.getByText("ISS (ZARYA)", { exact: true })).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText("NAVSTAR 43 (USA 132)", { exact: true })).toBeHidden();
+  await expect(page.getByText(navstars[0] as string, { exact: true })).toBeHidden();
 });

@@ -476,6 +476,36 @@ describe("orbital element ingestion", () => {
     expect(result.status).toBe("partial");
   });
 
+  it("records group membership, which the elements alone cannot express", async () => {
+    // The response IS the membership list -- no OMM field says which groups an object
+    // belongs to. For `visual` that list is the only brightness information a public
+    // catalog offers, so losing it would leave Visible Tonight with nothing to filter
+    // on.
+    const database = new InMemoryDatabase();
+    await ingestOrbitalElements({
+      database,
+      http: clientReturning([ISS_GP, HST_GP]),
+      query: { kind: "GROUP", value: "visual" },
+    });
+
+    const members = await database.groups.members("celestrak-gp", "visual");
+    expect(members.map((member) => member.catalogId)).toEqual(["20580", "25544"]);
+  });
+
+  it("does not invent group membership for a single-object request", async () => {
+    // A CATNR request returns one object because that is what was asked for, not
+    // because the object is the sole member of anything.
+    const database = new InMemoryDatabase();
+    await ingestOrbitalElements({
+      database,
+      http: clientReturning([ISS_GP]),
+      query: { kind: "CATNR", value: "25544" },
+    });
+
+    expect(await database.groups.members("celestrak-gp", "visual")).toEqual([]);
+    expect(await database.groups.members("celestrak-gp", "25544")).toEqual([]);
+  });
+
   /**
    * The E2E corpus, checked here rather than only in Playwright.
    *

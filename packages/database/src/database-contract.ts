@@ -700,6 +700,83 @@ export function runDatabaseContractTests(
       });
     });
 
+    // ── group membership ─────────────────────────────────────────────────────
+
+    describe("satellite groups", () => {
+      beforeEach(async () => {
+        await db.satellites.upsertMany([
+          makeSatellite({ catalogId: "25544" }),
+          makeSatellite({ catalogId: "20580" }),
+          makeSatellite({ catalogId: "39084" }),
+        ]);
+      });
+
+      it("records membership and reads it back", async () => {
+        const result = await db.groups.record(
+          "celestrak-gp",
+          "visual",
+          ["25544", "20580"],
+          at(0),
+        );
+        expect(result).toEqual({ added: 2, refreshed: 0 });
+
+        const members = await db.groups.members("celestrak-gp", "visual");
+        expect(members.map((m) => m.catalogId)).toEqual(["20580", "25544"]);
+      });
+
+      it("refreshes lastSeenAt without moving firstSeenAt", async () => {
+        await db.groups.record("celestrak-gp", "visual", ["25544"], at(0));
+        const second = await db.groups.record("celestrak-gp", "visual", ["25544"], at(3));
+        expect(second).toEqual({ added: 0, refreshed: 1 });
+
+        // firstSeenAt is when membership BEGAN. Moving it forward on every run would
+        // erase the only record of how long an object has been listed.
+        const [member] = await db.groups.members("celestrak-gp", "visual");
+        expect(member?.firstSeenAt.toISOString()).toBe(at(0).toISOString());
+        expect(member?.lastSeenAt.toISOString()).toBe(at(3).toISOString());
+      });
+
+      it("finds objects that have dropped out of the group", async () => {
+        await db.groups.record("celestrak-gp", "visual", ["25544", "20580"], at(0));
+        // The next run lists only one of them: 20580 has left the group.
+        await db.groups.record("celestrak-gp", "visual", ["25544"], at(2));
+
+        // Unfiltered, the departed object is still on record -- that history is the
+        // point of storing lastSeenAt rather than deleting rows.
+        expect(await db.groups.members("celestrak-gp", "visual")).toHaveLength(2);
+
+        // Filtered to the latest run, it is correctly gone. This is what stops a
+        // no-longer-listed object being offered as a naked-eye target.
+        const current = await db.groups.members("celestrak-gp", "visual", {
+          seenSince: at(2),
+        });
+        expect(current.map((m) => m.catalogId)).toEqual(["25544"]);
+      });
+
+      it("keeps groups and providers separate", async () => {
+        await db.groups.record("celestrak-gp", "visual", ["25544"], at(0));
+        await db.groups.record("celestrak-gp", "stations", ["20580"], at(0));
+        await db.groups.record("other-provider", "visual", ["39084"], at(0));
+
+        expect(
+          (await db.groups.members("celestrak-gp", "visual")).map((m) => m.catalogId),
+        ).toEqual(["25544"]);
+        expect(
+          (await db.groups.members("celestrak-gp", "stations")).map((m) => m.catalogId),
+        ).toEqual(["20580"]);
+        expect(
+          (await db.groups.members("other-provider", "visual")).map((m) => m.catalogId),
+        ).toEqual(["39084"]);
+      });
+
+      it("treats an empty membership list as a no-op", async () => {
+        expect(await db.groups.record("celestrak-gp", "visual", [], at(0))).toEqual({
+          added: 0,
+          refreshed: 0,
+        });
+      });
+    });
+
     // ── liveness ─────────────────────────────────────────────────────────────
 
     it("reports a non-negative ping latency", async () => {

@@ -6,6 +6,7 @@ import {
   providerStatusResponseSchema,
   satelliteListResponseSchema,
   catalogElementsResponseSchema,
+  catalogGroupResponseSchema,
 } from "@orbitwatch/contracts";
 import { InMemoryDatabase } from "@orbitwatch/database";
 import type { FastifyInstance } from "fastify";
@@ -280,6 +281,76 @@ describe("OrbitWatch API", () => {
   });
 
   // ── elements ─────────────────────────────────────────────────────────────
+
+  describe("catalog groups", () => {
+    it("serves the current membership of an ingested group", async () => {
+      await database.satellites.upsertMany([
+        SATELLITE,
+        { ...SATELLITE, catalogId: "20580", name: "HST" },
+      ]);
+      await database.groups.record(
+        "celestrak-gp",
+        "visual",
+        ["25544", "20580"],
+        new Date(),
+      );
+
+      const response = await app.inject({ url: "/catalog/groups/visual" });
+      expect(response.statusCode).toBe(200);
+
+      const body = catalogGroupResponseSchema.parse(response.json());
+      expect(body.count).toBe(2);
+      expect(body.catalogIds).toEqual(["20580", "25544"]);
+      expect(body.observedAt).toBeDefined();
+    });
+
+    it("omits members that were not in the most recent ingestion", async () => {
+      await database.satellites.upsertMany([
+        SATELLITE,
+        { ...SATELLITE, catalogId: "20580", name: "HST" },
+      ]);
+
+      // Two runs. The second lists only one object, so the other has left the group
+      // and must stop being offered -- not merely be marked stale somewhere.
+      await database.groups.record("celestrak-gp", "visual", ["25544", "20580"], hoursAgo(6));
+      await database.groups.record("celestrak-gp", "visual", ["25544"], new Date());
+
+      const body = catalogGroupResponseSchema.parse(
+        (await app.inject({ url: "/catalog/groups/visual" })).json(),
+      );
+      expect(body.catalogIds).toEqual(["25544"]);
+    });
+
+    it("says the membership is unknown rather than reporting an empty group", async () => {
+      // An empty array would read as "no objects are visual", which is a claim. Never
+      // having fetched the group is a different thing and must not look like data.
+      const response = await app.inject({ url: "/catalog/groups/visual" });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({
+        error: { code: "GROUP_NOT_INGESTED" },
+      });
+    });
+
+    it("reports membership stamped in the past, not only membership stamped now", async () => {
+      // A captured response replayed with its original fetch time carries timestamps
+      // older than the run that replayed it. Anchoring "current" to the run's clock
+      // made the group come back empty; anchoring it to the membership's own newest
+      // observation is what makes a replay behave like the fetch it stands in for.
+      await database.satellites.upsertMany([SATELLITE]);
+      await database.groups.record("celestrak-gp", "visual", ["25544"], hoursAgo(72));
+
+      const body = catalogGroupResponseSchema.parse(
+        (await app.inject({ url: "/catalog/groups/visual" })).json(),
+      );
+      expect(body.catalogIds).toEqual(["25544"]);
+      expect(body.observedAt).toBe(hoursAgo(72).toISOString());
+    });
+
+    it("rejects a group name that is not a provider slug", async () => {
+      const response = await app.inject({ url: "/catalog/groups/..%2Fetc" });
+      expect(response.statusCode).toBeGreaterThanOrEqual(400);
+    });
+  });
 
   describe("elements", () => {
     beforeEach(async () => {

@@ -57,8 +57,10 @@ export {
   CIVIL_TWILIGHT_DEGREES,
   classifyShadow,
   illuminationAt,
+  nextDarkness,
   observerLighting,
   sunAltitudeDegrees,
+  type DarknessWindow,
   type ObserverLighting,
 } from "./illumination.js";
 

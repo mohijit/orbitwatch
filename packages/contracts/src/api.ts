@@ -258,6 +258,27 @@ export const catalogElementsResponseSchema = z.object({
 
 export type CatalogElementsResponse = z.infer<typeof catalogElementsResponseSchema>;
 
+/**
+ * Membership of a provider-published group.
+ *
+ * Catalog IDs only, deliberately. The client already holds every element set for the
+ * globe, so sending the elements again would be a second copy of data it has; what it
+ * cannot derive is WHICH objects are in the group. That is the whole payload.
+ *
+ * `observedAt` is when the provider last listed this membership, not when this response
+ * was built. A group whose membership is a week stale is a different claim from one
+ * refreshed an hour ago, and the client is entitled to say so.
+ */
+export const catalogGroupResponseSchema = z.object({
+  provider: z.string(),
+  group: z.string(),
+  count: z.number().int().nonnegative(),
+  catalogIds: z.array(z.string()),
+  observedAt: isoTimestampSchema.optional(),
+});
+
+export type CatalogGroupResponse = z.infer<typeof catalogGroupResponseSchema>;
+
 // ── query parameters ─────────────────────────────────────────────────────────────
 
 /** Bounded so a client cannot request the entire catalog in one page by accident. */

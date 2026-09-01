@@ -17,10 +17,11 @@ import { buildServer } from "./server.js";
  * this exists to give it something real to talk to.
  *
  * THE DATA IS REAL
- * `fixtures/celestrak-gp-e2e-subset.json` is 32 unmodified CelesTrak GP records,
- * exported from rows this project actually ingested (see
- * `packages/database/src/cli/export-e2e-fixture.ts` and `fixtures/manifest.json`).
- * Not one value is invented, and no request leaves the machine when this runs.
+ * Both fixtures are unmodified CelesTrak GP records exported from rows this project
+ * actually ingested (see `packages/database/src/cli/export-e2e-fixture.ts` and
+ * `fixtures/manifest.json`): a subset of one GROUP=active response for the catalog,
+ * and a subset of one GROUP=visual response for the brightness list. Not one value is
+ * invented, and no request leaves the machine when this runs.
  *
  * IT IS LOADED THE WAY PRODUCTION LOADS IT
  * The fixture is not turned into database rows here. It is replayed through
@@ -37,6 +38,16 @@ import { buildServer } from "./server.js";
 const PORT = Number(process.env["PORT"] ?? 3333);
 const repoRoot = resolve(process.cwd(), "..", "..");
 const FIXTURE_FILE = "celestrak-gp-e2e-subset.json";
+
+/**
+ * A subset of one real GROUP=visual response.
+ *
+ * Replayed as a second ingestion so the seeded API knows which objects CelesTrak
+ * curates as bright enough to see. That membership cannot be derived from the
+ * elements — GP records carry no brightness at all — and without it "Visible Tonight"
+ * has nothing to search.
+ */
+const VISUAL_FIXTURE_FILE = "celestrak-gp-e2e-visual.json";
 
 /**
  * The moment the fixture's records were actually retrieved from CelesTrak.
@@ -111,6 +122,23 @@ async function main(): Promise<void> {
     );
   }
 
+  // Second replay: the visual group. Runs through the same pipeline, which is what
+  // records group membership — the seed does not write it directly.
+  const visualBody = readFileSync(resolve(repoRoot, "fixtures", VISUAL_FIXTURE_FILE), "utf8");
+  const visual = await ingestOrbitalElements({
+    database,
+    http: new FixtureHttpClient(visualBody),
+    query: { kind: "GROUP", value: "visual" },
+    holder: "e2e-seed",
+  });
+
+  if (visual.status !== "success") {
+    throw new Error(
+      `E2E seed visual-group ingestion did not succeed: status=${visual.status} ` +
+        `${visual.errorSummary ?? ""}`,
+    );
+  }
+
   const app = await buildServer({
     database,
     cache: createMemoryCache(),
@@ -122,7 +150,8 @@ async function main(): Promise<void> {
   await app.listen({ port: PORT, host: "127.0.0.1" });
   console.log(
     `Seeded E2E API listening on http://127.0.0.1:${String(PORT)} — ` +
-      `${String(result.inserted)} objects ingested from fixtures/${FIXTURE_FILE}`,
+      `${String(result.inserted)} objects from fixtures/${FIXTURE_FILE}, ` +
+      `${String(visual.fetched)} visual-group members`,
   );
 }
 

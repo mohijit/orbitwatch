@@ -56,6 +56,20 @@ const ALWAYS_INCLUDE = ["25544"];
 
 const FIXTURE_FILE = "celestrak-gp-e2e-subset.json";
 
+/** The group whose response defines the corpus. */
+const BACKBONE_GROUP = "active";
+
+/**
+ * Members of CelesTrak's `visual` group to carry as well.
+ *
+ * The orbit-class buckets above pick low catalog IDs, which almost entirely miss the
+ * visual group — that population is mostly SL-series rocket bodies in the ten- to
+ * thirty-thousands. Only the ISS overlapped. Without a few of them the corpus cannot
+ * exercise "Visible Tonight" at all, because there would be nothing bright to search.
+ */
+const VISUAL_SAMPLE = 8;
+const VISUAL_FIXTURE_FILE = "celestrak-gp-e2e-visual.json";
+
 /** Minimal .env reader, mirroring check-connection.ts. No dependency, no side effects. */
 function readEnvFile(path: string): Record<string, string> {
   let raw: string;
@@ -140,12 +154,36 @@ async function main(): Promise<void> {
   try {
     // One run, so the fixture is a subset of a single real response rather than a
     // composite assembled from several fetches with different retrieval times.
-    const runRows = await sql<{ retrieved_at: Date | null }[]>`
-      SELECT max(retrieved_at) AS retrieved_at FROM orbital_elements
+    //
+    // The run is identified by RESOURCE, not by "the most recent retrieved_at". Those
+    // were the same thing until the `visual` group was first ingested, at which point
+    // the newest elements became a 146-object subset and this quietly started
+    // exporting a corpus with no ISS in it. The ALWAYS_INCLUDE guard caught that;
+    // naming the group is what stops it recurring.
+    const runRows = await sql<{ started_at: Date; completed_at: Date | null }[]>`
+      SELECT started_at, completed_at FROM provider_runs
+      WHERE provider = 'celestrak-gp' AND resource = ${`group-${BACKBONE_GROUP}`}
+        AND status IN ('success', 'partial')
+      ORDER BY started_at DESC LIMIT 1
     `;
-    const retrievedAt = runRows[0]?.retrieved_at ?? undefined;
+    const run = runRows[0];
+    if (run === undefined) {
+      throw new Error(
+        `No successful celestrak-gp group-${BACKBONE_GROUP} run — ingest the catalog first.`,
+      );
+    }
+
+    const retrievedRows = await sql<{ retrieved_at: Date }[]>`
+      SELECT DISTINCT retrieved_at FROM orbital_elements
+      WHERE retrieved_at >= ${run.started_at}
+        AND retrieved_at <= ${run.completed_at ?? new Date()}
+      ORDER BY retrieved_at DESC LIMIT 1
+    `;
+    const retrievedAt = retrievedRows[0]?.retrieved_at;
     if (retrievedAt === undefined) {
-      throw new Error("orbital_elements is empty — run the ingestion worker first.");
+      throw new Error(
+        `The latest group-${BACKBONE_GROUP} run stored no elements; nothing to export.`,
+      );
     }
 
     const rows = await sql<SourceRow[]>`
@@ -221,6 +259,32 @@ async function main(): Promise<void> {
       selected.set(catalogId, candidate);
     }
 
+    // Membership of the visual group, as recorded by the ingestion worker. Read from
+    // our own database, so this costs no provider request.
+    const visualRows = await sql<{ catalog_id: string }[]>`
+      SELECT catalog_id FROM satellite_groups
+      WHERE provider = 'celestrak-gp' AND group_name = 'visual'
+    `;
+    const visualIds = new Set(visualRows.map((row) => row.catalog_id));
+
+    for (const candidate of candidates
+      .filter((entry) => visualIds.has(entry.catalogId))
+      .sort((a, b) => compareCatalogIds(a.catalogId, b.catalogId))
+      .slice(0, VISUAL_SAMPLE)) {
+      selected.set(candidate.catalogId, candidate);
+    }
+
+    // Anything selected for another reason that is ALSO visual belongs in the visual
+    // fixture, or the two files would disagree about who is a member.
+    const visualMembers = [...selected.values()]
+      .filter((candidate) => visualIds.has(candidate.catalogId))
+      .sort((a, b) => compareCatalogIds(a.catalogId, b.catalogId));
+
+    console.log(
+      `
+  visual group     : ${String(visualIds.size)} members known, ${String(visualMembers.length)} in this corpus`,
+    );
+
     const chosen = [...selected.values()].sort((a, b) =>
       compareCatalogIds(a.catalogId, b.catalogId),
     );
@@ -239,6 +303,13 @@ async function main(): Promise<void> {
     const body = `${JSON.stringify(chosen.map((candidate) => candidate.omm))}\n`;
     writeFileSync(resolve(repoRoot, "fixtures", FIXTURE_FILE), body, "utf8");
 
+    // A genuine subset of the real GROUP=visual response, for the same reason the
+    // corpus is a subset of GROUP=active: the E2E seed replays it through the real
+    // ingestion pipeline, and that is what records group membership.
+    const visualBody = `${JSON.stringify(visualMembers.map((candidate) => candidate.omm))}
+`;
+    writeFileSync(resolve(repoRoot, "fixtures", VISUAL_FIXTURE_FILE), visualBody, "utf8");
+
     console.log(
       `\n  epoch range      : ${new Date(Math.min(...epochs)).toISOString()}` +
         ` .. ${new Date(Math.max(...epochs)).toISOString()}`,
@@ -248,6 +319,9 @@ async function main(): Promise<void> {
       `  classes present  : ${[...new Set(chosen.map((entry) => entry.orbitClass))].sort().join(", ")}`,
     );
     console.log(`  wrote            : fixtures/${FIXTURE_FILE} (${String(body.length)} bytes)`);
+    console.log(
+      `  wrote            : fixtures/${VISUAL_FIXTURE_FILE} (${String(visualMembers.length)} objects)`,
+    );
     console.log("\n  Record the provenance in fixtures/manifest.json before committing.\n");
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);

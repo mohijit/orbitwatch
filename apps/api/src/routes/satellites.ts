@@ -1,6 +1,7 @@
 import {
   satelliteQuerySchema,
   type CatalogElementsResponse,
+  type CatalogGroupResponse,
   type ElementHistoryResponse,
   type ElementsResponse,
   type SatelliteListResponse,
@@ -27,6 +28,18 @@ import type { ApiContext } from "../server.js";
  */
 
 /** Catalog ids are Alpha-5: five characters, a leading letter permitted. */
+/**
+ * Group names are provider-published slugs, not free text. Bounded and pattern-checked
+ * so a path parameter cannot become an arbitrary database predicate.
+ */
+const catalogGroupParamSchema = z.object({
+  group: z
+    .string()
+    .min(1)
+    .max(40)
+    .regex(/^[a-z0-9-]+$/, "Group names are lowercase, digits and hyphens"),
+});
+
 const catalogIdParamSchema = z.object({
   catalogId: z
     .string()
@@ -254,6 +267,61 @@ export async function registerSatelliteRoutes(
       time: context.now().toISOString(),
       count: limited.length,
       elements: limited.map(toOrbitalElements),
+    };
+  });
+
+  /**
+   * Membership of a provider-published group, e.g. CelesTrak's `visual`.
+   *
+   * Only the catalog IDs. The client already has every element set from
+   * /catalog/elements, so returning elements here would ship a second copy of data it
+   * holds; what it cannot work out for itself is which objects are members.
+   *
+   * Restricted to the most recent observation of the group, so an object that has
+   * dropped out stops being listed. Membership history stays in the database, but the
+   * API answers "who is in this group" with the current answer, not the cumulative one.
+   */
+  app.get("/catalog/groups/:group", async (request, reply): Promise<CatalogGroupResponse | undefined> => {
+    const { group } = catalogGroupParamSchema.parse(request.params);
+    const provider = "celestrak-gp";
+
+    const all = await context.database.groups.members(provider, group);
+
+    if (all.length === 0) {
+      // Never ingested. Deliberately not an empty list: "no objects are in this group"
+      // is a claim about the sky, and "we have not looked" is not the same statement.
+      await reply.status(404).send({
+        error: {
+          code: "GROUP_NOT_INGESTED",
+          message: `The ${group} group has not been ingested, so its membership is unknown.`,
+        },
+      });
+      return undefined;
+    }
+
+    // Current membership is everything seen in the most recent observation of the
+    // group, which is the newest lastSeenAt across its members — one ingestion stamps
+    // every member it lists with the same instant.
+    //
+    // Derived from the membership itself rather than from provider_runs on purpose.
+    // Anchoring to a run's start time assumes the run's clock and the membership's
+    // clock are the same, which is false whenever a captured response is replayed with
+    // its original fetch time: the E2E seed does exactly that, and the group silently
+    // came back empty.
+    const observedAt = all.reduce(
+      (latest, member) => (member.lastSeenAt > latest ? member.lastSeenAt : latest),
+      all[0]!.lastSeenAt,
+    );
+    const current = all.filter(
+      (member) => member.lastSeenAt.getTime() === observedAt.getTime(),
+    );
+
+    return {
+      provider,
+      group,
+      count: current.length,
+      catalogIds: current.map((member) => member.catalogId),
+      observedAt: observedAt.toISOString(),
     };
   });
 }
