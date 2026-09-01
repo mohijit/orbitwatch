@@ -2,6 +2,7 @@
 
 import {
   assessAccuracy,
+  deriveOrbitGeometry,
   footprintRing,
   groundTrack,
   parseOmm,
@@ -37,6 +38,7 @@ export interface SelectedTelemetry {
   readonly catalogId: string;
   readonly satrec: SatRec;
   readonly accuracy: AccuracyAssessment;
+  readonly orbitClass: OrbitClass;
   readonly groundTrackSegments: readonly (readonly { latitude: number; longitude: number }[])[];
   readonly footprint: readonly { latitude: number; longitude: number }[];
 }
@@ -54,9 +56,16 @@ function derive(
   satrec: SatRec,
   epoch: Date,
   time: number,
-  orbitClass: OrbitClass | undefined,
 ): SelectedTelemetry {
   const targetTime = new Date(time);
+
+  // Derived from the satrec rather than taken as an argument. It used to be a
+  // parameter, and the only caller passed `undefined` — which silently fell back to
+  // the UNKNOWN accuracy bands. Those are byte-identical to LEO, so every GEO object
+  // was judged against LEO tolerances and reported as aging roughly ten times too
+  // early. Nothing outside this module knows the orbit class before the elements are
+  // fetched, so nothing outside this module should be asked for it.
+  const { orbitClass } = deriveOrbitGeometry(satrec);
   const accuracy = assessAccuracy(epoch, targetTime, orbitClass);
 
   const windowMs = GROUND_TRACK_WINDOW_MINUTES * 60_000;
@@ -79,14 +88,20 @@ function derive(
     }
   }
 
-  return { catalogId, satrec, accuracy, groundTrackSegments: track.segments, footprint };
+  return {
+    catalogId,
+    satrec,
+    accuracy,
+    orbitClass,
+    groundTrackSegments: track.segments,
+    footprint,
+  };
 }
 
 export function useSelectedSatellite(
   catalogId: string | undefined,
   time: number,
   mode: TimelineMode,
-  orbitClass: OrbitClass | undefined,
 ): SelectedTelemetryState {
   const [fetched, setFetched] = useState<{ satrec: SatRec; epoch: Date } | undefined>(undefined);
   const [state, setState] = useState<SelectedTelemetryState>({ status: "idle" });
@@ -126,8 +141,8 @@ export function useSelectedSatellite(
   // Recompute: every tick, from whatever was last fetched. No network.
   useEffect(() => {
     if (catalogId === undefined || fetched === undefined) return;
-    setState({ status: "ready", ...derive(catalogId, fetched.satrec, fetched.epoch, time, orbitClass) });
-  }, [catalogId, fetched, time, orbitClass]);
+    setState({ status: "ready", ...derive(catalogId, fetched.satrec, fetched.epoch, time) });
+  }, [catalogId, fetched, time]);
 
   return state;
 }

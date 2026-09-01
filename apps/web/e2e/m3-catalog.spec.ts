@@ -39,6 +39,11 @@ test("open, search ISS, select, verify panel, scrub time, return to live", async
   await expect(page.getByTestId("accuracy-badge")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("element-epoch")).not.toBeEmpty();
 
+  // The orbit class must be derived from the elements, not left unset. UNKNOWN here
+  // would mean the accuracy assessment fell back to its default bands, which for a
+  // non-LEO object silently reports the wrong confidence.
+  await expect(page.getByTestId("orbit-class")).toHaveText("LEO");
+
   // The accuracy label encodes hours-from-epoch ("NOMINAL · 14h"), so it is the
   // evidence that the panel recomputed for a new instant rather than showing a stale one.
   const liveLabel = await page.getByTestId("element-epoch").textContent();

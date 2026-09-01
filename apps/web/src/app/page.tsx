@@ -31,7 +31,7 @@ export default function HomePage() {
   }, [mode]);
 
   const catalogState = useCatalogPositions(time);
-  const telemetry = useSelectedSatellite(selectedCatalogId, time, mode, undefined);
+  const telemetry = useSelectedSatellite(selectedCatalogId, time, mode);
 
   const handleTimelineChange = (nextTime: number, nextMode: TimelineMode): void => {
     setTime(nextTime);

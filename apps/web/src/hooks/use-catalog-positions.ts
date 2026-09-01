@@ -20,9 +20,19 @@ export const POSITION_FIELDS = 7;
  * Whole-catalog positions, propagated in a Web Worker.
  *
  * Fetches current elements once from the API, hands them to the worker, and then
- * drives a tick loop at `tickHz`. `time` is a prop rather than an internal clock so the
- * timeline can drive propagation to a past instant (SIMULATION) or let it run forward
- * from now (LIVE) — the worker does not know or care which.
+ * propagates whenever `time` changes. `time` is a prop rather than an internal clock
+ * so the timeline can drive propagation to a past instant (SIMULATION) or let it run
+ * forward from now (LIVE) — the worker does not know or care which.
+ *
+ * TICK CADENCE
+ * There is deliberately no timer in here. `time` is the only clock: whoever owns it
+ * decides how often the catalog is propagated, and every distinct instant produces
+ * exactly one tick. An earlier version ran its own interval alongside the caller's,
+ * and the two raced — the interval was re-created on every `time` change, so its next
+ * firing was always scheduled just after the change that would clear it. Measured
+ * result was 6 propagations in 12 seconds at irregular gaps up to 4 s, which the
+ * renderer papered over by dead reckoning until it hit its extrapolation clamp and
+ * then snapped. See e2e/tick-cadence.spec.ts, which fails if that returns.
  */
 
 export type CatalogTickState =
@@ -37,13 +47,13 @@ export type CatalogTickState =
       readonly tickTime: number;
     };
 
-const DEFAULT_TICK_HZ = 1;
-
-export function useCatalogPositions(time: number, tickHz = DEFAULT_TICK_HZ): CatalogTickState {
+export function useCatalogPositions(time: number): CatalogTickState {
   const [state, setState] = useState<CatalogTickState>({ status: "loading" });
   const workerRef = useRef<Worker | null>(null);
   const catalogIdsRef = useRef<readonly string[]>([]);
-  const readyRef = useRef(false);
+  // State, not a ref: becoming ready has to re-run the tick effect below, otherwise
+  // nothing propagates until `time` next changes — which in SIMULATION is never.
+  const [ready, setReady] = useState(false);
 
   // Worker lifecycle: created once, fed the catalog once.
   useEffect(() => {
@@ -64,7 +74,7 @@ export function useCatalogPositions(time: number, tickHz = DEFAULT_TICK_HZ): Cat
       if (message.type === "catalogIds") {
         catalogIdsRef.current = message.ids;
       } else if (message.type === "ready") {
-        readyRef.current = true;
+        setReady(true);
         if (message.failed > 0) {
           // Visible in the console rather than swallowed: dropping thousands of
           // objects from the catalog must never be silent.
@@ -112,15 +122,11 @@ export function useCatalogPositions(time: number, tickHz = DEFAULT_TICK_HZ): Cat
     // Deliberately mount-once: the worker and the fetched catalog outlive time changes.
   }, []);
 
-  // Tick loop: posts the current `time` to the worker at `tickHz`.
+  // Propagate: one tick per distinct instant, plus one as soon as the worker is ready.
   useEffect(() => {
-    const intervalMs = 1000 / tickHz;
-    const interval = setInterval(() => {
-      if (readyRef.current) workerRef.current?.postMessage({ type: "tick", time });
-    }, intervalMs);
-    return () => clearInterval(interval);
-  }, [time, tickHz]);
+    if (!ready) return;
+    workerRef.current?.postMessage({ type: "tick", time });
+  }, [ready, time]);
 
   return state;
 }
-

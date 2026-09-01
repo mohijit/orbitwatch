@@ -1,5 +1,7 @@
 "use client";
 
+import { describeOrbitClass } from "@orbitwatch/orbit-core";
+
 import type { SelectedTelemetryState } from "../../hooks/use-selected-satellite";
 
 /**
@@ -65,6 +67,10 @@ export function TelemetryPanel({ catalogId, telemetry, onClose }: TelemetryPanel
           <dl className="telemetry-panel__facts">
             <dt>Element epoch</dt>
             <dd data-testid="element-epoch">{telemetry.accuracy.label}</dd>
+            <dt>Orbit</dt>
+            <dd data-testid="orbit-class" title={describeOrbitClass(telemetry.orbitClass)}>
+              {telemetry.orbitClass}
+            </dd>
           </dl>
         </div>
       ) : null}
