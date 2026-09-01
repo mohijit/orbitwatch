@@ -235,3 +235,134 @@ html, body {
   cursor: pointer;
 }
 .timeline__live-button:disabled { opacity: 0.4; cursor: default; }
+
+/* ── M4: observer, look angles and passes ──────────────────────────────────────── */
+
+.observer-panel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.observer-panel__summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  background: none;
+  border: 1px solid var(--ow-border);
+  border-radius: 8px;
+  padding: 0.3rem 0.6rem;
+  color: var(--ow-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.observer-panel__label { font-size: 0.6rem; letter-spacing: 0.12em; color: var(--ow-text-muted); text-transform: uppercase; }
+.observer-panel__value { font-size: 0.75rem; font-family: ui-monospace, monospace; }
+
+.observer-panel__sky { display: flex; align-items: center; gap: 0.4rem; font-size: 0.7rem; }
+.observer-panel__lighting { padding: 0.1rem 0.4rem; border-radius: 999px; border: 1px solid currentColor; }
+.observer-panel__lighting--daylight { color: #facc15; }
+.observer-panel__lighting--twilight { color: #f4a548; }
+.observer-panel__lighting--dark { color: #7dd3fc; }
+.observer-panel__sun { color: var(--ow-text-muted); font-family: ui-monospace, monospace; }
+
+.observer-panel__body {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 30;
+  width: 21rem;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 12px;
+  padding: 0.8rem;
+  backdrop-filter: blur(8px);
+}
+
+.observer-panel__actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.observer-panel__actions button,
+.observer-panel__manual button {
+  background: rgba(53, 200, 245, 0.12);
+  border: 1px solid var(--ow-border);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  color: var(--ow-text);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.observer-panel__actions button:disabled { opacity: 0.5; cursor: default; }
+.observer-panel__actions button[aria-pressed="true"] { border-color: var(--ow-accent); color: var(--ow-accent); }
+
+.observer-panel__manual { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; align-items: end; }
+.observer-panel__manual label { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.65rem; color: var(--ow-text-muted); }
+.observer-panel__manual input {
+  background: rgba(8, 12, 20, 0.8);
+  border: 1px solid var(--ow-border);
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+  color: var(--ow-text);
+  font: inherit;
+  font-size: 0.75rem;
+  font-family: ui-monospace, monospace;
+}
+
+.observer-panel__error { margin: 0.5rem 0 0; font-size: 0.72rem; color: #f4a548; }
+.observer-panel__provenance { margin: 0.6rem 0 0; font-size: 0.68rem; line-height: 1.45; color: var(--ow-text-muted); }
+
+.shell__picking {
+  position: absolute;
+  top: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-accent);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.75rem;
+  backdrop-filter: blur(8px);
+}
+
+.telemetry-panel__observer { margin-top: 0.7rem; border-top: 1px solid var(--ow-border); padding-top: 0.6rem; }
+.telemetry-panel__section-heading {
+  margin: 0 0 0.4rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ow-text-muted);
+  font-weight: 600;
+}
+
+.look-angles__empty, .pass-list__empty { margin: 0 0 0.5rem; font-size: 0.72rem; color: var(--ow-text-muted); }
+.look-angles__horizon { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.35rem; }
+.look-angles__horizon--up { color: #4ade80; }
+.look-angles__horizon--down { color: var(--ow-text-muted); }
+.look-angles__facts { margin: 0 0 0.5rem; font-size: 0.78rem; display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.6rem; }
+.look-angles__facts dt { color: var(--ow-text-muted); font-size: 0.68rem; align-self: center; }
+.look-angles__facts dd { margin: 0; font-family: ui-monospace, monospace; }
+.look-angles__hint { color: var(--ow-text-muted); font-size: 0.65rem; font-family: inherit; }
+
+.pass-list { list-style: none; margin: 0; padding: 0; max-height: 13rem; overflow-y: auto; }
+.pass-list__item {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--ow-border);
+  font-size: 0.72rem;
+}
+.pass-list__item:last-child { border-bottom: none; }
+.pass-list__when { display: flex; gap: 0.4rem; align-items: baseline; font-family: ui-monospace, monospace; }
+.pass-list__day { color: var(--ow-text-muted); }
+.pass-list__duration { color: var(--ow-text-muted); margin-left: auto; }
+.pass-list__geometry { display: flex; gap: 0.6rem; color: var(--ow-text-muted); font-family: ui-monospace, monospace; }
+.pass-list__visibility { justify-self: start; font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.pass-list__visibility--likely-visible { color: #4ade80; }
+.pass-list__visibility--possibly-visible { color: #facc15; }
+.pass-list__visibility--daylight { color: #f4a548; }
+.pass-list__visibility--satellite-in-shadow { color: var(--ow-text-muted); }
+.pass-list__visibility--not-optically-favourable { color: var(--ow-text-muted); }

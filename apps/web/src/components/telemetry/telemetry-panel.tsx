@@ -17,6 +17,14 @@ export interface TelemetryPanelProps {
   readonly catalogId: string | undefined;
   readonly telemetry: SelectedTelemetryState;
   readonly onClose: () => void;
+  /**
+   * Observer-relative sections: look angles and upcoming passes.
+   *
+   * Passed in rather than computed here, because they depend on a location this
+   * component has no business knowing about, and because they are only meaningful
+   * once an object is selected — which is exactly when this panel exists.
+   */
+  readonly children?: React.ReactNode;
 }
 
 const CONFIDENCE_LABEL: Record<string, string> = {
@@ -26,7 +34,7 @@ const CONFIDENCE_LABEL: Record<string, string> = {
   UNRELIABLE: "UNRELIABLE",
 };
 
-export function TelemetryPanel({ catalogId, telemetry, onClose }: TelemetryPanelProps) {
+export function TelemetryPanel({ catalogId, telemetry, onClose, children }: TelemetryPanelProps) {
   if (catalogId === undefined) return null;
 
   return (
@@ -72,6 +80,11 @@ export function TelemetryPanel({ catalogId, telemetry, onClose }: TelemetryPanel
               {telemetry.orbitClass}
             </dd>
           </dl>
+
+          <section className="telemetry-panel__observer" aria-label="From your location">
+            <h2 className="telemetry-panel__section-heading">From your location</h2>
+            {children}
+          </section>
         </div>
       ) : null}
     </aside>

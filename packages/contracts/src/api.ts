@@ -274,3 +274,53 @@ export const satelliteQuerySchema = z.object({
 });
 
 export type SatelliteQuery = z.infer<typeof satelliteQuerySchema>;
+
+// ── observer ─────────────────────────────────────────────────────────────────────
+
+/**
+ * A place someone is observing from.
+ *
+ * Lives in contracts rather than in the web app because every platform needs it and
+ * they must agree byte for byte: the M6 gate asserts that web and native compute the
+ * same look angles and pass times from the same observer, which is only meaningful if
+ * "the same observer" has one definition. It is also what the web app persists to
+ * local storage, so this schema doubles as the validator for data that has been
+ * sitting in a browser across app versions.
+ *
+ * Altitude is in KILOMETRES, matching orbit-core, and is above the WGS-84 ellipsoid
+ * rather than above sea level. The distinction is worth tens of metres, which is far
+ * below anything this affects, but naming it stops the two being silently mixed.
+ */
+export const observerLocationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  /**
+   * Bounded well beyond any inhabited elevation. The point is not to police altitude
+   * but to reject nonsense — a metres value pasted into a kilometres field turns
+   * Everest into 8,849 km and puts the observer above most of the catalog.
+   */
+  altitude: z.number().min(-0.5).max(20),
+  label: z.string().min(1).max(120).optional(),
+});
+
+export type ObserverLocationInput = z.infer<typeof observerLocationSchema>;
+
+/** How the observer's position was obtained. Shown in the UI; never guessed. */
+export const observerSourceSchema = z.enum(["DEVICE", "GLOBE", "MANUAL"]);
+
+export type ObserverSource = z.infer<typeof observerSourceSchema>;
+
+/**
+ * A stored observer, with provenance and an accuracy figure when the source has one.
+ *
+ * `accuracyMetres` comes from the Geolocation API and is only ever present for a
+ * DEVICE fix. A hand-entered coordinate has no meaningful accuracy, and inventing one
+ * would misrepresent it.
+ */
+export const storedObserverSchema = observerLocationSchema.extend({
+  source: observerSourceSchema,
+  accuracyMetres: z.number().positive().optional(),
+  savedAt: isoTimestampSchema,
+});
+
+export type StoredObserver = z.infer<typeof storedObserverSchema>;

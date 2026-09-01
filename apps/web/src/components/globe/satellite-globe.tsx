@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import type { ObserverLocation } from "@orbitwatch/orbit-core";
+
 import type { CatalogTickState } from "../../hooks/use-catalog-positions";
 import { POSITION_FIELDS } from "../../hooks/use-catalog-positions";
 import type { SelectedTelemetryState } from "../../hooks/use-selected-satellite";
@@ -31,6 +33,9 @@ const NOT_RENDERABLE_ALTITUDE = -1; // pushes an unusable position below the ell
  */
 const MAX_EXTRAPOLATION_SECONDS = 5;
 
+/** Stable id so the observer marker can be replaced without touching other entities. */
+const OBSERVER_ENTITY_ID = "observer-location";
+
 export interface SatelliteGlobeProps {
   readonly catalogState: CatalogTickState;
   readonly selectedCatalogId: string | undefined;
@@ -41,6 +46,15 @@ export interface SatelliteGlobeProps {
    * instant is fixed and positions must hold still.
    */
   readonly live: boolean;
+  /** The observing location to mark, if one is set. */
+  readonly observer: ObserverLocation | undefined;
+  /**
+   * While true, a click on the globe sets the observing location instead of selecting
+   * a satellite. Modal, and the UI says so — a click that silently means two different
+   * things depending on hidden state is how people lose their selection.
+   */
+  readonly pickingLocation: boolean;
+  readonly onPickLocation: (latitude: number, longitude: number) => void;
 }
 
 type CesiumViewer = InstanceType<CesiumModule["Viewer"]>;
@@ -52,6 +66,9 @@ export function SatelliteGlobe({
   onSelect,
   telemetry,
   live,
+  observer,
+  pickingLocation,
+  onPickLocation,
 }: SatelliteGlobeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
@@ -61,6 +78,12 @@ export function SatelliteGlobe({
   const cesiumRef = useRef<CesiumModule | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  // The Cesium input handler is installed once, so it must read these through refs
+  // rather than closing over the values that existed when the viewer was built.
+  const pickingRef = useRef(pickingLocation);
+  pickingRef.current = pickingLocation;
+  const onPickLocationRef = useRef(onPickLocation);
+  onPickLocationRef.current = onPickLocation;
 
   /**
    * Whether the viewer exists yet. State, not a ref, and that is the whole point.
@@ -131,6 +154,25 @@ export function SatelliteGlobe({
       // a hit needs no lookup — the picked object already carries the answer.
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
       handler.setInputAction((click: { position: CesiumNamespace.Cartesian2 }) => {
+        if (pickingRef.current) {
+          // pickEllipsoid, not scene.pick: the user is choosing a place on Earth, and
+          // scene.pick would return whichever satellite primitive happened to be under
+          // the cursor. Returns undefined when the click misses the globe entirely —
+          // space, off the limb — which must not be read as a coordinate of zero.
+          const ground = viewer.camera.pickEllipsoid(
+            click.position,
+            viewer.scene.globe.ellipsoid,
+          );
+          if (ground !== undefined) {
+            const carto = Cesium.Cartographic.fromCartesian(ground);
+            onPickLocationRef.current(
+              Cesium.Math.toDegrees(carto.latitude),
+              Cesium.Math.toDegrees(carto.longitude),
+            );
+          }
+          return;
+        }
+
         const picked: unknown = viewer.scene.pick(click.position);
         if (
           picked !== undefined &&
@@ -302,6 +344,49 @@ export function SatelliteGlobe({
 
     viewer.scene.requestRender();
   }, [globeReady, telemetry]);
+
+  // Observer marker.
+  //
+  // Its own effect and its own entity id, so it survives selection changes and is not
+  // swept away with the ground track. Seeing where the app thinks you are is the
+  // fastest way to catch a wrong location, which otherwise only shows up as pass times
+  // that are quietly hours out.
+  useEffect(() => {
+    const Cesium = cesiumRef.current;
+    const viewer = viewerRef.current;
+    if (Cesium === null || viewer === null) return;
+
+    const existing = viewer.entities.getById(OBSERVER_ENTITY_ID);
+    if (existing !== undefined) viewer.entities.remove(existing);
+
+    if (observer !== undefined) {
+      viewer.entities.add({
+        id: OBSERVER_ENTITY_ID,
+        position: Cesium.Cartesian3.fromDegrees(
+          observer.longitude,
+          observer.latitude,
+          // Metres for Cesium, kilometres in the model.
+          observer.altitude * 1000,
+        ),
+        point: {
+          pixelSize: 10,
+          color: Cesium.Color.fromCssColorString("#5ef2a0"),
+          outlineColor: Cesium.Color.fromCssColorString("#06210f"),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: observer.label ?? "You",
+          font: "12px system-ui, sans-serif",
+          fillColor: Cesium.Color.fromCssColorString("#5ef2a0"),
+          pixelOffset: new Cesium.Cartesian2(0, -18),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+    }
+
+    viewer.scene.requestRender();
+  }, [globeReady, observer]);
 
   return (
     <>
