@@ -95,6 +95,16 @@
       "truncated": false,
       "capturedFrom": "GitHub Actions runner.",
       "notes": "50 transmitters for the ISS. Many numeric fields (uplink_high, baud, norad_follow_id) are legitimately null. status is lowercase active/inactive, separate from the alive boolean."
+    },
+    {
+      "file": "celestrak-gp-e2e-subset.json",
+      "provider": "celestrak-gp",
+      "endpoint": "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json",
+      "retrievedAt": "2026-08-31T22:51:21.370Z",
+      "purpose": "Multi-object corpus for the E2E suite, so it verifies catalog behaviour at scale rather than for a single object. Replayed through the real ingestion pipeline by apps/api/src/seed-dev.ts.",
+      "truncated": true,
+      "capturedFrom": "Re-exported from OrbitWatch's own Postgres by packages/database/src/cli/export-e2e-fixture.ts. The rows are unmodified records from the GROUP=active response fetched at retrievedAt; NO new provider request was made to produce this file.",
+      "notes": "32 of the 16,468 records in that response. Record values are verbatim; only the storage wrapper was dropped (identity column, created_at, first_seen_at, and the SATCAT columns GP ingestion leaves NULL). Key ORDER is JSONB's, not the wire order, because Postgres does not preserve it -- values are unaffected. Selection is deterministic: bucket by orbit class derived from the elements, take the 6 lowest catalog IDs per class, always include 25544. Classes present: GEO, GSO, HEO, LEO, MEO, UNKNOWN. 26464 (CLUSTER II-FM8) classifies as UNKNOWN because its mean elements put perigee below the surface -- a real property of that orbit, not a defect, and useful coverage of the UNKNOWN path. Epochs span 2026-08-29T17:09:38Z to 2026-09-02T03:24:57Z; the E2E suite pins the browser clock so those ages stay fixed as real time passes."
     }
   ],
   "blocked": []

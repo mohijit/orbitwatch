@@ -1,5 +1,7 @@
 import { InMemoryDatabase } from "@orbitwatch/database";
+import { deriveOrbitGeometry, parseOmm, type OMMJsonObject } from "@orbitwatch/orbit-core";
 import { FetchGuard, GuardedHttpClient } from "@orbitwatch/providers";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,11 +12,13 @@ import { ingestOrbitalElements } from "./ingest-elements.js";
 /**
  * End-to-end ingestion tests against the in-memory database.
  *
- * The GP payloads below are hand-constructed from CelesTrak's DOCUMENTED schema, not
- * captured from production — celestrak.org is unreachable from this network. They are
- * sufficient to prove the pipeline (lease, validate, normalise, compare, store, log,
- * last-known-good) and they explicitly do NOT satisfy the provider-verification gate.
- * See docs/adr/0005 and fixtures/manifest.json.
+ * The inline GP payloads below are hand-constructed from CelesTrak's DOCUMENTED
+ * schema, not captured from production — celestrak.org is unreachable from this
+ * network. They are sufficient to prove the pipeline (lease, validate, normalise,
+ * compare, store, log, last-known-good) and they explicitly do NOT satisfy the
+ * provider-verification gate. See docs/adr/0005 and fixtures/manifest.json.
+ *
+ * The final block is the exception: it runs against real captured records.
  */
 
 const ISS_GP = {
@@ -470,5 +474,77 @@ describe("orbital element ingestion", () => {
     expect(result.inserted).toBe(1);
     expect(result.rejected).toBe(1);
     expect(result.status).toBe("partial");
+  });
+
+  /**
+   * The E2E corpus, checked here rather than only in Playwright.
+   *
+   * Unlike the payloads above, these records ARE captured production data: 32 real
+   * CelesTrak GP records exported from rows this project ingested, with provenance in
+   * fixtures/manifest.json. The E2E suite seeds itself by replaying this file through
+   * the very function under test here, so a fixture that no longer ingests cleanly
+   * should fail in seconds during `pnpm test` rather than as a puzzling timeout two
+   * minutes into a browser run.
+   *
+   * The multiplicity assertions are the point. The suite spent M3 exercising a single
+   * object, which cannot tell a working catalog pipeline apart from one that handles
+   * exactly one item. If this corpus ever collapses back to one object — or to several
+   * copies of the same one — these fail.
+   */
+  describe("the committed E2E fixture", () => {
+    const records = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "..", "..", "fixtures", "celestrak-gp-e2e-subset.json"),
+        "utf8",
+      ),
+    ) as Record<string, unknown>[];
+
+    it("ingests through the real pipeline with nothing rejected", async () => {
+      const database = new InMemoryDatabase();
+      const result = await ingestOrbitalElements({
+        database,
+        http: clientReturning(records),
+        query: { kind: "GROUP", value: "active" },
+      });
+
+      expect(result.status).toBe("success");
+      expect(result.rejected).toBe(0);
+      expect(result.inserted).toBe(records.length);
+
+      // Placeholder satellite rows too: without them the catalog query, which joins
+      // satellites, silently returns nothing at all.
+      const satellites = await database.satellites.findMany({ limit: 1000 });
+      expect(satellites).toHaveLength(records.length);
+    });
+
+    it("holds many distinct objects, not one repeated", () => {
+      const catalogIds = new Set(records.map((record) => String(record["NORAD_CAT_ID"])));
+      const names = new Set(records.map((record) => String(record["OBJECT_NAME"])));
+
+      expect(records.length).toBeGreaterThan(1);
+      expect(catalogIds.size).toBe(records.length);
+      expect(names.size).toBe(records.length);
+    });
+
+    it("spans several orbit regimes", () => {
+      // Accuracy bands are keyed on orbit class, so a corpus confined to one regime
+      // would leave the class-dependent paths untested no matter how many objects it
+      // held. Derived from the elements, because the GP feed does not state it.
+      const classes = new Set(
+        records.map(
+          (record) =>
+            deriveOrbitGeometry(
+              parseOmm(record as unknown as OMMJsonObject, {
+                provider: "celestrak",
+                retrievedAt: new Date(),
+              }).satrec,
+            ).orbitClass,
+        ),
+      );
+
+      expect(classes.size).toBeGreaterThanOrEqual(4);
+      expect(classes).toContain("LEO");
+      expect(classes).toContain("GEO");
+    });
   });
 });

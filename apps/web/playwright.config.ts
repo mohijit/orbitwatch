@@ -12,7 +12,22 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: [["list"]],
-  timeout: 120_000,
+  /**
+   * Generous, because these tests drive a real 3D renderer with no GPU.
+   *
+   * Headless Chromium falls back to SwiftShader, so every frame of the globe is
+   * rasterised on the CPU. Measured here: roughly 4-15 frames per second once the
+   * catalog is drawn, against 60 on real hardware. The app requests a render each
+   * frame while the timeline is live — that is the dead reckoning that keeps motion
+   * smooth — so the main thread stays busy, and Playwright's actionability checks,
+   * which wait for an element to hold still across animation frames, are slow in
+   * proportion. Individual journeys measured over a minute at 1280x720.
+   *
+   * This is the cost of testing the renderer rather than mocking it. Do not reach for
+   * `force: true` to make it faster: that skips exactly the visibility and hit-target
+   * checks that catch a globe rendering over the top of the UI.
+   */
+  timeout: 300_000,
   use: {
     baseURL: "http://127.0.0.1:3100",
     trace: "retain-on-failure",

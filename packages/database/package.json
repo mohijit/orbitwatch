@@ -12,6 +12,7 @@
     "lint": "eslint src",
     "test": "vitest run",
     "migrate": "tsx src/cli/migrate.ts",
+    "export:e2e-fixture": "tsx src/cli/export-e2e-fixture.ts",
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {

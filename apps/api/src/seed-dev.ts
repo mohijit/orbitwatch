@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 
 import { createMemoryCache } from "@orbitwatch/cache";
 import { InMemoryDatabase } from "@orbitwatch/database";
+import { GuardedHttpClient, type GuardedFetchResult } from "@orbitwatch/providers";
+import { ingestOrbitalElements } from "@orbitwatch/worker";
 
 import { buildServer } from "./server.js";
 
@@ -14,67 +16,100 @@ import { buildServer } from "./server.js";
  * pull request has no secrets and must still be able to run the full E2E suite, so
  * this exists to give it something real to talk to.
  *
- * Seeded from the ACTUAL CelesTrak fixtures captured and verified in M2
- * (fixtures/celestrak-gp-iss.json, fixtures/celestrak-satcat-iss.json) rather than
- * invented data — the same standing rule that governs every fixture in this repo.
+ * THE DATA IS REAL
+ * `fixtures/celestrak-gp-e2e-subset.json` is 32 unmodified CelesTrak GP records,
+ * exported from rows this project actually ingested (see
+ * `packages/database/src/cli/export-e2e-fixture.ts` and `fixtures/manifest.json`).
+ * Not one value is invented, and no request leaves the machine when this runs.
+ *
+ * IT IS LOADED THE WAY PRODUCTION LOADS IT
+ * The fixture is not turned into database rows here. It is replayed through
+ * `ingestOrbitalElements` — the same VALIDATE → NORMALIZE → COMPARE → STORE → LOG pipeline
+ * the real worker runs — with the network step replaced by a reader that returns the
+ * fixture bytes. That means the E2E suite exercises schema validation, catalog-id
+ * normalisation, SGP4 initialisation and placeholder satellite creation for real. A
+ * seed that hand-built rows would skip all of it, and a field rename that breaks
+ * ingestion in production would still pass E2E.
  *
  *   pnpm --filter @orbitwatch/api exec tsx src/seed-dev.ts
  */
 
 const PORT = Number(process.env["PORT"] ?? 3333);
 const repoRoot = resolve(process.cwd(), "..", "..");
+const FIXTURE_FILE = "celestrak-gp-e2e-subset.json";
 
-function readFixture(name: string): Record<string, unknown> {
-  const raw = JSON.parse(readFileSync(resolve(repoRoot, "fixtures", name), "utf8"));
-  return (raw as Record<string, unknown>[])[0] as Record<string, unknown>;
+/**
+ * The moment the fixture's records were actually retrieved from CelesTrak.
+ *
+ * Read from `fixtures/manifest.json` rather than hard-coded, so the retrieval time
+ * this server reports cannot drift from the provenance record that justifies it. It
+ * becomes the response's `fetchedAt`, which is what makes the API state the retrieval
+ * time the data genuinely has instead of the time this process happened to start —
+ * two different facts that this product refuses to conflate.
+ */
+function fixtureRetrievedAt(): Date {
+  const manifest = JSON.parse(
+    readFileSync(resolve(repoRoot, "fixtures", "manifest.json"), "utf8"),
+  ) as { fixtures?: { file?: string; retrievedAt?: string }[] };
+
+  const entry = manifest.fixtures?.find((candidate) => candidate.file === FIXTURE_FILE);
+  if (entry?.retrievedAt === undefined) {
+    throw new Error(`fixtures/manifest.json has no retrievedAt for ${FIXTURE_FILE}.`);
+  }
+  return new Date(entry.retrievedAt);
+}
+
+const FIXTURE_RETRIEVED_AT = fixtureRetrievedAt();
+
+/**
+ * Replays captured provider bytes instead of making a request.
+ *
+ * Subclasses `GuardedHttpClient` rather than reimplementing its interface so that a
+ * caller cannot be handed something that merely looks like the guarded client. `get`
+ * is overridden to never touch the network, which is what makes it impossible for the
+ * E2E suite to reach CelesTrak — a stricter guarantee than remembering not to.
+ */
+class FixtureHttpClient extends GuardedHttpClient {
+  readonly #body: string;
+
+  constructor(body: string) {
+    super();
+    this.#body = body;
+  }
+
+  override get(): Promise<GuardedFetchResult> {
+    return Promise.resolve({
+      status: "fetched",
+      body: this.#body,
+      contentType: "application/json",
+      fetchedAt: FIXTURE_RETRIEVED_AT,
+    });
+  }
 }
 
 async function main(): Promise<void> {
-  const gp = readFixture("celestrak-gp-iss.json");
-  const satcat = readFixture("celestrak-satcat-iss.json");
-
+  const body = readFileSync(resolve(repoRoot, "fixtures", FIXTURE_FILE), "utf8");
   const database = new InMemoryDatabase();
 
-  await database.satellites.upsertMany([
-    {
-      catalogId: "25544",
-      name: String(satcat["OBJECT_NAME"]),
-      internationalDesignator: String(satcat["OBJECT_ID"]),
-      objectType: "PAYLOAD",
-      operationalStatus: "OPERATIONAL",
-      owner: String(satcat["OWNER"]),
-      launchDate: new Date(`${String(satcat["LAUNCH_DATE"])}T00:00:00.000Z`),
-      launchSite: String(satcat["LAUNCH_SITE"]),
-      decayDate: undefined,
-      periodMinutes: Number(satcat["PERIOD"]),
-      inclinationDegrees: Number(satcat["INCLINATION"]),
-      apogeeKm: Number(satcat["APOGEE"]),
-      perigeeKm: Number(satcat["PERIGEE"]),
-      rcsSquareMetres: Number(satcat["RCS"]),
-      orbitClass: "LEO",
-      metadata: {},
-      sourceProvider: "celestrak",
-      updatedAt: new Date(),
-    },
-  ]);
+  const result = await ingestOrbitalElements({
+    database,
+    http: new FixtureHttpClient(body),
+    // The group the fixture was drawn from. It never reaches a URL, but it is what
+    // provider_runs records, so it should name the real source.
+    query: { kind: "GROUP", value: "active" },
+    holder: "e2e-seed",
+  });
 
-  const epoch = new Date(`${String(gp["EPOCH"])}Z`);
-  await database.elements.insertMany([
-    {
-      catalogId: "25544",
-      provider: "celestrak",
-      format: "OMM_JSON",
-      epoch,
-      retrievedAt: new Date(),
-      omm: gp,
-      tleLine1: undefined,
-      tleLine2: undefined,
-      meanMotion: Number(gp["MEAN_MOTION"]),
-      eccentricity: Number(gp["ECCENTRICITY"]),
-      inclination: Number(gp["INCLINATION"]),
-      bstar: Number(gp["BSTAR"]),
-    },
-  ]);
+  if (result.status !== "success" || result.inserted === 0) {
+    // Failing loudly here is the point: a fixture that no longer satisfies the
+    // ingestion schema must stop the suite, not quietly serve an empty catalog and
+    // turn every downstream assertion into a confusing timeout.
+    throw new Error(
+      `E2E seed ingestion did not succeed: status=${result.status} ` +
+        `fetched=${String(result.fetched)} inserted=${String(result.inserted)} ` +
+        `rejected=${String(result.rejected)} ${result.errorSummary ?? ""}`,
+    );
+  }
 
   const app = await buildServer({
     database,
@@ -85,7 +120,10 @@ async function main(): Promise<void> {
   });
 
   await app.listen({ port: PORT, host: "127.0.0.1" });
-  console.log(`Seeded E2E API listening on http://127.0.0.1:${String(PORT)}`);
+  console.log(
+    `Seeded E2E API listening on http://127.0.0.1:${String(PORT)} — ` +
+      `${String(result.inserted)} objects ingested from fixtures/${FIXTURE_FILE}`,
+  );
 }
 
 await main();

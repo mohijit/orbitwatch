@@ -72,6 +72,9 @@ importers:
       '@orbitwatch/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
+      '@orbitwatch/worker':
+        specifier: workspace:*
+        version: link:../worker
       '@types/node':
         specifier: ^24.3.0
         version: 24.13.3

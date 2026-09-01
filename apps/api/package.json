@@ -27,6 +27,7 @@
   "devDependencies": {
     "@orbitwatch/eslint-config": "workspace:*",
     "@orbitwatch/typescript-config": "workspace:*",
+    "@orbitwatch/worker": "workspace:*",
     "@types/node": "^24.3.0",
     "eslint": "^9.36.0",
     "rimraf": "^6.0.1",

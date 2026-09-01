@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { CatalogTickState } from "../../hooks/use-catalog-positions";
 import { POSITION_FIELDS } from "../../hooks/use-catalog-positions";
@@ -61,6 +61,22 @@ export function SatelliteGlobe({
   const cesiumRef = useRef<CesiumModule | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+
+  /**
+   * Whether the viewer exists yet. State, not a ref, and that is the whole point.
+   *
+   * Cesium arrives asynchronously — a 6 MB engine fetched and evaluated after mount —
+   * so the effects below routinely run before there is anything to draw into. Held in
+   * a ref, the viewer becoming available re-renders nothing, so those effects would
+   * never run again on their own: they only re-run when `catalogState`, the selection
+   * or the timeline mode changes. In LIVE mode a propagation tick arrives every second
+   * and hides that, which is why this survived M3. It is not hidden when the clock is
+   * not advancing — SIMULATION, a backgrounded tab, or the pinned clock the E2E suite
+   * uses — and there the catalog can become ready first and the globe then stays empty
+   * permanently, with no error anywhere. Found by multi-object.spec.ts, which read the
+   * point collection back out of the live scene and saw zero primitives in it.
+   */
+  const [globeReady, setGlobeReady] = useState(false);
 
   // Viewer: created once.
   useEffect(() => {
@@ -130,6 +146,9 @@ export function SatelliteGlobe({
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
       viewerRef.current = viewer;
+      // Last, and only after every ref above is populated: this is what re-runs the
+      // effects that draw into the viewer.
+      setGlobeReady(true);
     })();
 
     return () => {
@@ -138,6 +157,10 @@ export function SatelliteGlobe({
       if (viewer !== null && !viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
       pointsRef.current = null;
+      // Cleared as well as set, so StrictMode's double mount does not leave this true
+      // while pointing at a destroyed viewer — the drawing effects would then run once
+      // against nothing and never be re-triggered.
+      setGlobeReady(false);
     };
   }, []);
 
@@ -224,7 +247,7 @@ export function SatelliteGlobe({
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [catalogState, selectedCatalogId, live]);
+  }, [globeReady, catalogState, selectedCatalogId, live]);
 
   // Ground track + footprint for the selected object.
   useEffect(() => {
@@ -278,7 +301,7 @@ export function SatelliteGlobe({
     }
 
     viewer.scene.requestRender();
-  }, [telemetry]);
+  }, [globeReady, telemetry]);
 
   return (
     <>
