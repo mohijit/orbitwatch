@@ -1,3 +1,5 @@
+import Constants from "expo-constants";
+
 import {
   elementsResponseSchema,
   satelliteListResponseSchema,
@@ -13,17 +15,46 @@ import {
  * field, web and mobile fail identically and at the boundary, rather than one of them
  * quietly rendering `undefined` on a device where nobody can attach a debugger.
  *
- * BASE URL
- * `EXPO_PUBLIC_API_BASE_URL` is inlined at build time by Expo. The development build
- * profile points it at 10.0.2.2, which is how the Android emulator reaches the host
- * machine's localhost; a physical device needs the host's LAN address instead, which
- * is why it is configuration and not a constant.
+ * FINDING THE SERVER IN DEVELOPMENT
+ * "localhost" means the phone on a phone, so the one address that cannot work is the
+ * obvious one. The emulator has 10.0.2.2; a physical device needs the development
+ * machine's LAN address, which changes with the network and is exactly the kind of
+ * thing nobody wants to edit by hand before every test.
+ *
+ * Metro already solved this: the packager tells the client which host it was reached
+ * on, and Expo exposes that as `hostUri`. Reusing it with the API's port means the app
+ * finds the server on an emulator, on a phone over Wi-Fi, and after the laptop's
+ * address changes, with nothing configured.
+ *
+ * `EXPO_PUBLIC_API_BASE_URL` overrides it and is what release builds use, where there
+ * is no packager and the answer is a real deployment.
  */
 
-const DEFAULT_BASE_URL = "http://10.0.2.2:3333";
+/** Reachable from the Android emulator only; the last resort if nothing else resolves. */
+const EMULATOR_FALLBACK = "http://10.0.2.2:3333";
+
+const API_PORT = 3333;
+
+/**
+ * The development machine's address, as the packager reported it.
+ *
+ * `hostUri` looks like "192.168.1.24:8081". Only the host is taken; the port is
+ * Metro's, not the API's. Absent in any build without a packager, which is the signal
+ * to fall back.
+ */
+function packagerHost(): string | undefined {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (typeof hostUri !== "string" || hostUri === "") return undefined;
+  const host = hostUri.split(":")[0];
+  return host === undefined || host === "" ? undefined : host;
+}
 
 export function apiBaseUrl(): string {
-  return process.env["EXPO_PUBLIC_API_BASE_URL"] ?? DEFAULT_BASE_URL;
+  const configured = process.env["EXPO_PUBLIC_API_BASE_URL"];
+  if (configured !== undefined && configured !== "") return configured;
+
+  const host = packagerHost();
+  return host === undefined ? EMULATOR_FALLBACK : `http://${host}:${String(API_PORT)}`;
 }
 
 export class ApiError extends Error {
