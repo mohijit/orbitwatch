@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { FIXTURE_OBJECT_COUNT, PINNED_CLOCK } from "./fixture";
 
@@ -13,6 +13,18 @@ import { FIXTURE_OBJECT_COUNT, PINNED_CLOCK } from "./fixture";
 
 test.use({ timezoneId: "Australia/Sydney" });
 
+/**
+ * Space weather is not open by default; the panel rail starts with only the pass list
+ * showing. Both tests below are about what the panel says, so both have to open it.
+ */
+async function openSpaceWeather(page: Page): Promise<void> {
+  await page.getByTestId("panel-toggle-weather").click();
+  await expect(page.getByTestId("panel-toggle-weather")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+}
+
 test("reports current conditions and what they mean for accuracy", async ({ page }) => {
   await page.clock.setFixedTime(PINNED_CLOCK);
   await page.goto("/");
@@ -20,6 +32,7 @@ test("reports current conditions and what they mean for accuracy", async ({ page
     `${FIXTURE_OBJECT_COUNT} OBJECTS`,
     { timeout: 30_000 },
   );
+  await openSpaceWeather(page);
 
   const panel = page.getByTestId("space-weather");
   await expect(panel).toBeVisible({ timeout: 30_000 });
@@ -42,6 +55,7 @@ test("says conditions are unknown rather than implying they are calm", async ({ 
   // fetch, which is the one thing this panel must never do.
   await page.route("**/space-weather", (route) => route.abort("failed"));
   await page.goto("/");
+  await openSpaceWeather(page);
 
   await expect(page.getByTestId("space-weather-unavailable")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("space-weather-unavailable")).toContainText(

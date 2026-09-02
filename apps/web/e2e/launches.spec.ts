@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { FIXTURE_OBJECT_COUNT, PINNED_CLOCK } from "./fixture";
 
@@ -19,13 +19,26 @@ import { FIXTURE_OBJECT_COUNT, PINNED_CLOCK } from "./fixture";
 
 test.use({ timezoneId: "Australia/Sydney" });
 
-test("lists the next launches with their real detail", async ({ page }) => {
+/**
+ * Launches is not open by default.
+ *
+ * The panel rail made each context panel independent and starts with only the pass
+ * list open, so a test that lands on the page and looks for launch cards finds nothing
+ * at all. Opening the panel is part of the journey now, not an assumption about what
+ * the layout happens to show first.
+ */
+async function openLaunches(page: Page): Promise<void> {
   await page.clock.setFixedTime(PINNED_CLOCK);
   await page.goto("/");
   await expect(page.getByTestId("catalog-count")).toHaveText(
     `${FIXTURE_OBJECT_COUNT} OBJECTS`,
     { timeout: 30_000 },
   );
+  await page.getByTestId("panel-toggle-launches").click();
+}
+
+test("lists the next launches with their real detail", async ({ page }) => {
+  await openLaunches(page);
 
   const panel = page.getByTestId("launches");
   await expect(panel).toBeVisible({ timeout: 30_000 });
@@ -41,8 +54,7 @@ test("lists the next launches with their real detail", async ({ page }) => {
 });
 
 test("never shows more precision than the provider claims", async ({ page }) => {
-  await page.clock.setFixedTime(PINNED_CLOCK);
-  await page.goto("/");
+  await openLaunches(page);
   await expect(page.getByTestId("launches")).toBeVisible({ timeout: 30_000 });
 
   // The Pallas-1 demo flight is published as accurate to the hour, so its time must be

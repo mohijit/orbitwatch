@@ -167,6 +167,17 @@ html, body {
   right: 1rem;
   z-index: 10;
   width: 18rem;
+  /*
+   * Bounded, because this panel grows with what is selected.
+   *
+   * It had no height limit at all, so with an observer set and a satellite chosen it
+   * ran off the bottom of a 720-pixel window and underneath the SGP4 disclaimer, which
+   * is full-width and painted above it. The pass rows down there were visible and
+   * completely unclickable -- the footer swallowed every click. Same clearance as the
+   * panel stack, for the same reason.
+   */
+  max-height: calc(100dvh - 9rem);
+  overflow-y: auto;
   background: var(--ow-surface);
   border: 1px solid var(--ow-border);
   border-radius: 12px;

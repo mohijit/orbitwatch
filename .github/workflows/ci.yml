@@ -54,10 +54,26 @@ jobs:
       - name: Build
         run: pnpm build
 
+  # Sharded across four runners, because the whole suite takes ~37 minutes on one.
+  #
+  # That is not slowness to be optimised away: these tests drive a real Cesium globe in
+  # headless Chromium, which has no GPU and rasterises every frame on the CPU through
+  # SwiftShader. The cost buys the only coverage that catches a renderer that builds
+  # cleanly and then hangs, so the answer is more runners rather than fewer tests.
+  #
+  # Sharding is by file (the suite is not fullyParallel), and the slowest single file is
+  # ~10 minutes, so no shard can finish much faster than that however many are added.
   browser:
-    name: Playwright
+    name: Playwright (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+
+    strategy:
+      # One shard failing must not cancel the others: a green-except-for-one run is far
+      # more useful to read than a run that stopped halfway through.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     steps:
       - uses: actions/checkout@v4
@@ -82,11 +98,15 @@ jobs:
       # Turbopack/Cesium failure in M0 built cleanly and then hung at runtime with no
       # stack trace. It was only ever caught by loading the page in a real browser.
       - name: Browser tests
-        run: pnpm --filter @orbitwatch/web exec playwright test
+        run: pnpm --filter @orbitwatch/web exec playwright test --shard=${{ matrix.shard }}/4
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
-          path: apps/web/playwright-report/
+          # Unique per shard, or the four uploads collide and only one survives.
+          name: playwright-report-${{ matrix.shard }}
+          # The traces are the diagnosis for a failure nobody can reproduce locally.
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
           retention-days: 7
