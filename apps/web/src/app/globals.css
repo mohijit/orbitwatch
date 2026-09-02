@@ -617,6 +617,7 @@ html, body {
 .radio-panel__note { margin: 0; font-size: 0.72rem; color: var(--ow-text-muted); line-height: 1.4; }
 .radio-panel__note--error { color: #f4a548; }
 .radio-panel__list { list-style: none; margin: 0; padding: 0; max-height: 11rem; overflow-y: auto; }
+.radio-panel__list:focus-visible { outline: 2px solid var(--ow-accent); outline-offset: 2px; }
 .radio-panel__item {
   display: grid;
   gap: 0.1rem;
@@ -662,3 +663,31 @@ html, body {
 .launches__name { color: var(--ow-text); }
 .launches__detail { color: var(--ow-text-muted); font-size: 0.63rem; }
 .launches__attribution { margin: 0.3rem 0 0; font-size: 0.6rem; color: var(--ow-text-muted); }
+
+.solar-events { margin-bottom: 0.75rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--ow-border); }
+.solar-events__note { margin: 0.2rem 0 0; font-size: 0.68rem; color: var(--ow-text-muted); }
+.solar-events__list { list-style: none; margin: 0; padding: 0; }
+.solar-events__item {
+  display: grid;
+  grid-template-columns: 2.6rem auto;
+  gap: 0 0.5rem;
+  padding: 0.25rem 0;
+  font-size: 0.68rem;
+  align-items: baseline;
+}
+.solar-events__type {
+  font-family: ui-monospace, monospace;
+  font-size: 0.62rem;
+  color: var(--ow-text-muted);
+  border: 1px solid var(--ow-border);
+  border-radius: 3px;
+  text-align: center;
+  padding: 0.05rem 0;
+  cursor: help;
+}
+/* The two types with a statable consequence for objects in low orbit. */
+.solar-events__type--orbital { color: var(--ow-warn, #facc15); border-color: #facc15; }
+.solar-events__when { color: var(--ow-text-muted); font-family: ui-monospace, monospace; font-size: 0.62rem; }
+.solar-events__label { grid-column: 2; color: var(--ow-text); }
+.solar-events__footnote { margin: 0.35rem 0 0; font-size: 0.62rem; line-height: 1.45; color: var(--ow-text-muted); }
+.solar-events__attribution { margin: 0.25rem 0 0; font-size: 0.6rem; color: var(--ow-text-muted); }

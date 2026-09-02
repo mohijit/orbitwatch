@@ -114,7 +114,20 @@ export function RadioPanel({ catalogId }: RadioPanelProps) {
 
       {state.status === "ready" && state.count > 0 ? (
         <>
-          <ul className="radio-panel__list" aria-label="Published transmitters">
+          {/*
+            Focusable because it scrolls.
+
+            A region with its own scrollbar must be reachable by keyboard or its
+            overflow is simply unreachable without a mouse — axe reports this as
+            `scrollable-region-focusable`. The pass list next door needs no equivalent
+            because every row in it is already a button. This one is plain text, so the
+            list itself takes the tab stop and its label says what it is.
+          */}
+          <ul
+            className="radio-panel__list"
+            aria-label="Published transmitters"
+            tabIndex={0}
+          >
             {state.transmitters.map((transmitter) => {
               const downlink = describeRange(
                 transmitter.downlinkLowHz,

@@ -1102,6 +1102,187 @@ export function runDatabaseContractTests(
       });
     });
 
+    // ── ground stations ──────────────────────────────────────────────────────
+
+    describe("ground stations", () => {
+      const station = (id: string, overrides: Record<string, unknown> = {}) => ({
+        id,
+        provider: "satnogs-network",
+        name: "Hackerspace.gr 1",
+        latitude: 38.01697,
+        longitude: 23.7314,
+        altitudeM: 104,
+        minHorizonDegrees: 40,
+        status: "Online",
+        bands: ["UHF"],
+        observations: 10624,
+        lastSeen: at(-2),
+        retrievedAt: at(0),
+        ...overrides,
+      });
+
+      it("stores a station and reads it back", async () => {
+        expect(await db.stations.upsertMany([station("1")])).toEqual({
+          inserted: 1,
+          updated: 0,
+        });
+
+        const [stored] = await db.stations.list();
+        expect(stored?.name).toBe("Hackerspace.gr 1");
+        expect(stored?.latitude).toBeCloseTo(38.01697, 5);
+        // The station's OWN horizon, not a global default: a site in a valley may not
+        // observe below 40 degrees, so "above 10" is not the same question everywhere.
+        expect(stored?.minHorizonDegrees).toBe(40);
+      });
+
+      it("round-trips the band array", async () => {
+        // Postgres arrays are the part of this most likely to come back as a string.
+        await db.stations.upsertMany([station("1", { bands: ["UHF", "VHF", "L"] })]);
+        const [stored] = await db.stations.list();
+        expect(Array.isArray(stored?.bands)).toBe(true);
+        expect([...(stored?.bands ?? [])].sort()).toEqual(["L", "UHF", "VHF"]);
+      });
+
+      it("keeps a station with no bands rather than rejecting it", async () => {
+        // A registered site not yet equipped is real.
+        await db.stations.upsertMany([station("1", { bands: [] })]);
+        const [stored] = await db.stations.list();
+        expect(stored?.bands).toEqual([]);
+      });
+
+      it("stores offline stations too, and can count by status", async () => {
+        // 4,119 of 4,452 in the real listing were Offline. Storing only the online ones
+        // would make the data useless the next time a station comes back, and treating
+        // the total as capacity would overstate coverage tenfold.
+        await db.stations.upsertMany([
+          station("1", { status: "Online" }),
+          station("2", { status: "Offline" }),
+          station("3", { status: "Offline" }),
+          station("4", { status: "Testing" }),
+        ]);
+
+        expect(await db.stations.countByStatus()).toEqual({
+          Online: 1,
+          Offline: 2,
+          Testing: 1,
+        });
+        expect((await db.stations.list({ status: "Online" })).map((one) => one.id)).toEqual([
+          "1",
+        ]);
+      });
+
+      it("orders by most recently heard from", async () => {
+        await db.stations.upsertMany([
+          station("stale", { lastSeen: at(-1000) }),
+          station("fresh", { lastSeen: at(-1) }),
+          station("never", { lastSeen: undefined }),
+        ]);
+
+        const ids = (await db.stations.list()).map((one) => one.id);
+        expect(ids[0]).toBe("fresh");
+        expect(ids[1]).toBe("stale");
+        // A station that has never checked in sorts last rather than being dropped.
+        expect(ids[2]).toBe("never");
+      });
+
+      it("updates a republished station rather than duplicating it", async () => {
+        await db.stations.upsertMany([station("1")]);
+        expect(
+          await db.stations.upsertMany([station("1", { status: "Offline" })]),
+        ).toEqual({ inserted: 0, updated: 1 });
+        expect((await db.stations.list())[0]?.status).toBe("Offline");
+      });
+
+      it("treats an empty batch as a no-op", async () => {
+        expect(await db.stations.upsertMany([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
+    // ── solar events ─────────────────────────────────────────────────────────
+
+    describe("solar events", () => {
+      const event = (id: string, hours: number, overrides: Record<string, unknown> = {}) => ({
+        id,
+        provider: "nasa-donki",
+        type: "GST",
+        knownType: true,
+        issuedAt: at(hours),
+        url: "https://example.invalid/donki/1",
+        summary: "A geomagnetic storm was observed.",
+        body: "## Message Type: Space Weather Notification - GST\n\nDetail.",
+        retrievedAt: at(0),
+        ...overrides,
+      });
+
+      it("stores an event and reads it back newest first", async () => {
+        await db.solarEvents.upsertMany([
+          event("old", -48),
+          event("newest", -1),
+          event("middle", -12),
+        ]);
+
+        expect((await db.solarEvents.recent()).map((one) => one.id)).toEqual([
+          "newest",
+          "middle",
+          "old",
+        ]);
+      });
+
+      it("keeps the narrative body verbatim", async () => {
+        // DONKI bodies are prose whose layout varies by message type. Parsing them into
+        // columns would be inventing structure NASA did not publish.
+        await db.solarEvents.upsertMany([event("1", -1)]);
+        const [stored] = await db.solarEvents.recent();
+        expect(stored?.body).toContain("## Message Type");
+        expect(stored?.summary).toBe("A geomagnetic storm was observed.");
+      });
+
+      it("stores a type it cannot explain rather than rejecting it", async () => {
+        // NASA adds message types. A new one is a row this product cannot yet explain,
+        // not an ingestion failure.
+        await db.solarEvents.upsertMany([
+          event("1", -1, { type: "XYZ", knownType: false }),
+        ]);
+        const [stored] = await db.solarEvents.recent();
+        expect(stored?.type).toBe("XYZ");
+        expect(stored?.knownType).toBe(false);
+      });
+
+      it("filters by type and by time", async () => {
+        await db.solarEvents.upsertMany([
+          event("storm", -2, { type: "GST" }),
+          event("flare", -3, { type: "FLR" }),
+          event("ancient", -500, { type: "GST" }),
+        ]);
+
+        expect((await db.solarEvents.recent({ types: ["GST"] })).map((one) => one.id)).toEqual([
+          "storm",
+          "ancient",
+        ]);
+        expect((await db.solarEvents.recent({ since: at(-24) })).map((one) => one.id)).toEqual([
+          "storm",
+          "flare",
+        ]);
+      });
+
+      it("honours a limit", async () => {
+        await db.solarEvents.upsertMany([event("a", -1), event("b", -2), event("c", -3)]);
+        expect(await db.solarEvents.recent({ limit: 2 })).toHaveLength(2);
+      });
+
+      it("updates a republished event rather than duplicating it", async () => {
+        await db.solarEvents.upsertMany([event("1", -1)]);
+        expect(
+          await db.solarEvents.upsertMany([event("1", -1, { summary: "Revised." })]),
+        ).toEqual({ inserted: 0, updated: 1 });
+        expect((await db.solarEvents.recent())[0]?.summary).toBe("Revised.");
+      });
+
+      it("treats an empty batch as a no-op", async () => {
+        expect(await db.solarEvents.upsertMany([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
     // ── liveness ─────────────────────────────────────────────────────────────
 
     it("reports a non-negative ping latency", async () => {

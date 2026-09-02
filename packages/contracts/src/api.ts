@@ -413,6 +413,75 @@ export const launchesResponseSchema = z.object({
 export type Launch = z.infer<typeof launchSchema>;
 export type LaunchesResponse = z.infer<typeof launchesResponseSchema>;
 
+// ── ground stations and solar events ─────────────────────────────────────────────
+
+/**
+ * A ground station that can receive passes.
+ *
+ * `minHorizonDegrees` is the station's OWN lowest observable elevation. A site in a
+ * valley may not see below 40 degrees, so "above 10 degrees" is not the same question
+ * for every receiver, and a client comparing a pass against a station must use this
+ * rather than a global default.
+ */
+export const groundStationSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  altitudeM: z.number(),
+  minHorizonDegrees: z.number(),
+  /** 'Online' | 'Offline' | 'Testing', as the provider publishes it. */
+  status: z.string(),
+  bands: z.array(z.string()),
+  observations: z.number().int().nonnegative(),
+  lastSeen: isoTimestampSchema.optional(),
+});
+
+export const groundStationsResponseSchema = z.object({
+  count: z.number().int().nonnegative(),
+  /** Every station stored, not just the returned page. */
+  total: z.number().int().nonnegative(),
+  /**
+   * How many stations are in each status.
+   *
+   * Present so a client cannot present the total as receiving capacity: roughly nine
+   * in ten stations are offline at any moment, and a list without this breakdown
+   * overstates coverage by an order of magnitude.
+   */
+  byStatus: z.record(z.string(), z.number().int().nonnegative()),
+  stations: z.array(groundStationSchema),
+  attribution: z.string(),
+});
+
+export type GroundStation = z.infer<typeof groundStationSchema>;
+export type GroundStationsResponse = z.infer<typeof groundStationsResponseSchema>;
+
+/**
+ * A discrete solar or geomagnetic event.
+ *
+ * Distinct from the space weather response, which reports the CURRENT level on the
+ * R/S/G scales. This is what happened, and when.
+ */
+export const solarEventSchema = z.object({
+  id: z.string(),
+  /** CME | GST | FLR | SEP | RBE | IPS | MPC | Report | anything NASA adds. */
+  type: z.string(),
+  /** False when the provider used a type this product cannot yet explain. */
+  knownType: z.boolean(),
+  issuedAt: isoTimestampSchema,
+  url: z.string(),
+  summary: z.string(),
+});
+
+export const solarEventsResponseSchema = z.object({
+  count: z.number().int().nonnegative(),
+  events: z.array(solarEventSchema),
+  attribution: z.string(),
+});
+
+export type SolarEvent = z.infer<typeof solarEventSchema>;
+export type SolarEventsResponse = z.infer<typeof solarEventsResponseSchema>;
+
 // ── query parameters ─────────────────────────────────────────────────────────────
 
 /** Bounded so a client cannot request the entire catalog in one page by accident. */

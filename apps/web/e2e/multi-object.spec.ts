@@ -188,12 +188,18 @@ test("the whole corpus is ingested, served and counted — not just the first ob
     const response = await fetch("http://127.0.0.1:3333/catalog/elements");
     return (await response.json()) as {
       count: number;
-      elements: { catalogId: string }[];
+      // Raw OMM records. The per-satellite envelope was removed from this endpoint
+      // because repeating `provider`, `format` and a restated `epoch` sixteen thousand
+      // times was a third of an 11 MB response that nothing read — so identity comes
+      // from NORAD_CAT_ID inside the record, where the provider put it.
+      elements: Record<string, unknown>[];
     };
   });
 
   expect(served.count).toBe(FIXTURE_OBJECT_COUNT);
-  expect(served.elements.map((element) => element.catalogId).sort()).toEqual(CATALOG_IDS);
+  expect(
+    served.elements.map((element) => String(element["NORAD_CAT_ID"])).sort(),
+  ).toEqual(CATALOG_IDS);
 });
 
 test("every object is propagated to its own distinct position", async ({ page }) => {

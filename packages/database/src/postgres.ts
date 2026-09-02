@@ -15,8 +15,12 @@ import type {
   SatelliteFilter,
   SatelliteRecord,
   SatelliteRepository,
+  GroundStationRecord,
+  GroundStationRepository,
   LaunchRecord,
   LaunchRepository,
+  SolarEventRecord,
+  SolarEventRepository,
   RadioRepository,
   RadioTransmitter,
   SatelliteGroupRepository,
@@ -221,6 +225,8 @@ export class PostgresDatabase implements Database {
   readonly radio: RadioRepository;
   readonly spaceWeather: SpaceWeatherRepository;
   readonly launches: LaunchRepository;
+  readonly stations: GroundStationRepository;
+  readonly solarEvents: SolarEventRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -236,6 +242,8 @@ export class PostgresDatabase implements Database {
     this.radio = createRadioRepository(sql);
     this.spaceWeather = createSpaceWeatherRepository(sql);
     this.launches = createLaunchRepository(sql);
+    this.stations = createStationRepository(sql);
+    this.solarEvents = createSolarEventRepository(sql);
     this.providerRuns = createProviderRunRepository(sql);
     this.leases = createLeaseRepository(sql);
   }
@@ -1159,6 +1167,234 @@ function createLaunchRepository(sql: Sql): LaunchRepository {
         SELECT * FROM launches WHERE net >= ${from} ORDER BY net ASC LIMIT ${limit}
       `;
       return rows.map(toLaunch);
+    },
+  };
+}
+
+interface GroundStationRow {
+  id: string;
+  provider: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  altitude_m: number;
+  min_horizon_degrees: number;
+  status: string;
+  bands: string[];
+  observations: number;
+  last_seen: Date | null;
+  retrieved_at: Date;
+}
+
+function toStation(row: GroundStationRow): GroundStationRecord {
+  return {
+    id: row.id,
+    provider: row.provider,
+    name: row.name,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    altitudeM: row.altitude_m,
+    minHorizonDegrees: row.min_horizon_degrees,
+    status: row.status,
+    bands: row.bands,
+    observations: row.observations,
+    lastSeen: row.last_seen ?? undefined,
+    retrievedAt: row.retrieved_at,
+  };
+}
+
+function createStationRepository(sql: Sql): GroundStationRepository {
+  return {
+    async upsertMany(stations) {
+      if (stations.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(stations, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((station) => ({
+              id: station.id,
+              provider: station.provider,
+              name: station.name,
+              latitude: station.latitude,
+              longitude: station.longitude,
+              altitude_m: station.altitudeM,
+              min_horizon_degrees: station.minHorizonDegrees,
+              status: station.status,
+              // Serialised as JSON and cast back to TEXT[] on the way in: json_to_recordset
+              // has no array column type that round-trips a JSON array directly.
+              bands: JSON.stringify(station.bands),
+              observations: station.observations,
+              last_seen: station.lastSeen?.toISOString() ?? null,
+              retrieved_at: station.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO ground_stations (
+            id, provider, name, latitude, longitude, altitude_m, min_horizon_degrees,
+            status, bands, observations, last_seen, retrieved_at,
+            first_seen_at, last_seen_at
+          )
+          SELECT
+            i.id, i.provider, i.name, i.latitude, i.longitude, i.altitude_m,
+            i.min_horizon_degrees, i.status,
+            ARRAY(SELECT json_array_elements_text(i.bands::json)),
+            i.observations, i.last_seen, i.retrieved_at, now(), now()
+          FROM json_to_recordset(${payload}::json) AS i(
+            id TEXT, provider TEXT, name TEXT,
+            latitude DOUBLE PRECISION, longitude DOUBLE PRECISION,
+            altitude_m DOUBLE PRECISION, min_horizon_degrees DOUBLE PRECISION,
+            status TEXT, bands TEXT, observations INTEGER,
+            last_seen TIMESTAMPTZ, retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            altitude_m = EXCLUDED.altitude_m,
+            min_horizon_degrees = EXCLUDED.min_horizon_degrees,
+            status = EXCLUDED.status,
+            bands = EXCLUDED.bands,
+            observations = EXCLUDED.observations,
+            last_seen = EXCLUDED.last_seen,
+            retrieved_at = EXCLUDED.retrieved_at,
+            last_seen_at = now()
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async list(options = {}) {
+      const rows = await sql<GroundStationRow[]>`
+        SELECT * FROM ground_stations
+        ${options.status === undefined ? sql`` : sql`WHERE status = ${options.status}`}
+        ORDER BY last_seen DESC NULLS LAST, id
+        ${options.limit === undefined ? sql`` : sql`LIMIT ${options.limit}`}
+      `;
+      return rows.map(toStation);
+    },
+
+    async countByStatus() {
+      const rows = await sql<{ status: string; count: string }[]>`
+        SELECT status, count(*)::text AS count FROM ground_stations GROUP BY status
+      `;
+      const counts: Record<string, number> = {};
+      for (const row of rows) counts[row.status] = Number(row.count);
+      return counts;
+    },
+  };
+}
+
+interface SolarEventRow {
+  id: string;
+  provider: string;
+  type: string;
+  known_type: boolean;
+  issued_at: Date;
+  url: string;
+  summary: string;
+  body: string;
+  retrieved_at: Date;
+}
+
+function toSolarEventRecord(row: SolarEventRow): SolarEventRecord {
+  return {
+    id: row.id,
+    provider: row.provider,
+    type: row.type,
+    knownType: row.known_type,
+    issuedAt: row.issued_at,
+    url: row.url,
+    summary: row.summary,
+    body: row.body,
+    retrievedAt: row.retrieved_at,
+  };
+}
+
+function createSolarEventRepository(sql: Sql): SolarEventRepository {
+  return {
+    async upsertMany(events) {
+      if (events.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(events, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((event) => ({
+              id: event.id,
+              provider: event.provider,
+              type: event.type,
+              known_type: event.knownType,
+              issued_at: event.issuedAt.toISOString(),
+              url: event.url,
+              summary: event.summary,
+              body: event.body,
+              retrieved_at: event.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO solar_events (
+            id, provider, type, known_type, issued_at, url, summary, body,
+            retrieved_at, first_seen_at, last_seen_at
+          )
+          SELECT
+            i.id, i.provider, i.type, i.known_type, i.issued_at, i.url, i.summary,
+            i.body, i.retrieved_at, now(), now()
+          FROM json_to_recordset(${payload}::json) AS i(
+            id TEXT, provider TEXT, type TEXT, known_type BOOLEAN,
+            issued_at TIMESTAMPTZ, url TEXT, summary TEXT, body TEXT,
+            retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            type = EXCLUDED.type,
+            known_type = EXCLUDED.known_type,
+            issued_at = EXCLUDED.issued_at,
+            url = EXCLUDED.url,
+            summary = EXCLUDED.summary,
+            body = EXCLUDED.body,
+            retrieved_at = EXCLUDED.retrieved_at,
+            last_seen_at = now()
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async recent(options = {}) {
+      const rows = await sql<SolarEventRow[]>`
+        SELECT * FROM solar_events
+        WHERE TRUE
+          ${options.since === undefined ? sql`` : sql`AND issued_at >= ${options.since}`}
+          ${
+            options.types === undefined
+              ? sql``
+              : sql`AND type = ANY(${options.types as string[]})`
+          }
+        ORDER BY issued_at DESC
+        ${options.limit === undefined ? sql`` : sql`LIMIT ${options.limit}`}
+      `;
+      return rows.map(toSolarEventRecord);
     },
   };
 }

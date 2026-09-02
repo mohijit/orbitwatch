@@ -1,14 +1,18 @@
 import {
   catalogGroupResponseSchema,
   radioTransmittersResponseSchema,
+  groundStationsResponseSchema,
   launchesResponseSchema,
+  solarEventsResponseSchema,
   spaceWeatherResponseSchema,
   elementsResponseSchema,
   satelliteListResponseSchema,
   type CatalogGroupResponse,
   type ElementsResponse,
   type RadioTransmittersResponse,
+  type GroundStationsResponse,
   type LaunchesResponse,
+  type SolarEventsResponse,
   type SpaceWeatherResponse,
   type SatelliteListResponse,
 } from "@orbitwatch/contracts";
@@ -136,5 +140,25 @@ export async function fetchSpaceWeather(): Promise<SpaceWeatherResponse> {
 export async function fetchUpcomingLaunches(limit = 6): Promise<LaunchesResponse> {
   return launchesResponseSchema.parse(
     await getJson("/launches/upcoming", { limit: String(limit) }),
+  );
+}
+
+/**
+ * Ground stations that can receive passes.
+ *
+ * Defaults to the online ones. The response also carries the full breakdown by status,
+ * because roughly nine in ten stations are offline at any moment and a bare list would
+ * overstate coverage tenfold.
+ */
+export async function fetchStations(limit = 200): Promise<GroundStationsResponse> {
+  return groundStationsResponseSchema.parse(
+    await getJson("/stations", { limit: String(limit) }),
+  );
+}
+
+/** Recent solar and geomagnetic events — what happened, not what conditions are. */
+export async function fetchSolarEvents(limit = 8): Promise<SolarEventsResponse> {
+  return solarEventsResponseSchema.parse(
+    await getJson("/solar-events", { limit: String(limit) }),
   );
 }

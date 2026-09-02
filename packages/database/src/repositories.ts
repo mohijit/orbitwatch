@@ -426,6 +426,80 @@ export interface LaunchRepository {
   upcoming(from: Date, limit: number): Promise<readonly LaunchRecord[]>;
 }
 
+/**
+ * A ground station that can receive satellite passes.
+ *
+ * `minHorizonDegrees` is the station's OWN lowest observable elevation, not a global
+ * default: a site in a valley may not see below 40 degrees, so "above 10 degrees" is
+ * not the same question for every receiver.
+ */
+export interface GroundStationRecord {
+  readonly id: string;
+  readonly provider: string;
+  readonly name: string;
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly altitudeM: number;
+  readonly minHorizonDegrees: number;
+  /** 'Online' | 'Offline' | 'Testing', as the provider publishes it. */
+  readonly status: string;
+  readonly bands: readonly string[];
+  readonly observations: number;
+  readonly lastSeen: Date | undefined;
+  readonly retrievedAt: Date;
+}
+
+export interface GroundStationRepository {
+  upsertMany(
+    stations: readonly GroundStationRecord[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /**
+   * Stations, newest-observed first, optionally restricted to a status.
+   *
+   * Everything is stored, including the offline majority, because a station that is
+   * dark today receives again tomorrow. Filtering is the reader's decision.
+   */
+  list(options?: {
+    readonly status?: string;
+    readonly limit?: number;
+  }): Promise<readonly GroundStationRecord[]>;
+
+  /** Counts by status, so a caller can say "317 of 4,452 online" honestly. */
+  countByStatus(): Promise<Readonly<Record<string, number>>>;
+}
+
+/**
+ * A discrete solar or geomagnetic event.
+ *
+ * Distinct from `SpaceWeatherObservation`, which is a current level. This is a thing
+ * that happened, with the narrative NASA published about it.
+ */
+export interface SolarEventRecord {
+  readonly id: string;
+  readonly provider: string;
+  readonly type: string;
+  readonly knownType: boolean;
+  readonly issuedAt: Date;
+  readonly url: string;
+  readonly summary: string;
+  readonly body: string;
+  readonly retrievedAt: Date;
+}
+
+export interface SolarEventRepository {
+  upsertMany(
+    events: readonly SolarEventRecord[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /** Most recent events, newest first. */
+  recent(options?: {
+    readonly since?: Date;
+    readonly types?: readonly string[];
+    readonly limit?: number;
+  }): Promise<readonly SolarEventRecord[]>;
+}
+
 export interface Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
@@ -433,6 +507,8 @@ export interface Database {
   readonly radio: RadioRepository;
   readonly spaceWeather: SpaceWeatherRepository;
   readonly launches: LaunchRepository;
+  readonly stations: GroundStationRepository;
+  readonly solarEvents: SolarEventRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
   /** Run migrations. Safe to call repeatedly; already-applied ones are skipped. */

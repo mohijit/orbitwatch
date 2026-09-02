@@ -9,6 +9,7 @@ import { PassList } from "@/components/observer/pass-list";
 import { VisibleTonightPanel } from "@/components/observer/visible-tonight";
 import { RadioPanel } from "@/components/telemetry/radio-panel";
 import { SpaceWeatherPanel } from "@/components/telemetry/space-weather";
+import { SolarEvents } from "@/components/telemetry/solar-events";
 import { UpcomingLaunches } from "@/components/telemetry/upcoming-launches";
 import { CommandPalette } from "@/components/search/command-palette";
 import { TelemetryPanel } from "@/components/telemetry/telemetry-panel";
@@ -189,6 +190,7 @@ export default function HomePage() {
 
       <aside className="tonight-panel" aria-label="Visible tonight">
         <SpaceWeatherPanel />
+        <SolarEvents />
         <UpcomingLaunches />
         <VisibleTonightPanel
           state={worker.visibleTonight}
