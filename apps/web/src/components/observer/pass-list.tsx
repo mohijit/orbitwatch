@@ -10,6 +10,8 @@ import {
 } from "@orbitwatch/orbit-core";
 import { useMemo, useState } from "react";
 
+import { spokenBearing } from "../../lib/spoken";
+
 import { SkyChart } from "./sky-chart";
 
 /**
@@ -105,7 +107,9 @@ export function PassList({ passes, hasObserver, satrec, observer }: PassListProp
   }
 
   return (
-    <ol className="pass-list" data-testid="pass-list">
+    <>
+      <h3 className="telemetry-panel__section-heading">Upcoming passes</h3>
+      <ol className="pass-list" data-testid="pass-list" aria-label="Upcoming passes">
       {passes.map((pass) => {
         const key = passKey(pass);
         const isExpanded = key === expandedKey;
@@ -115,6 +119,12 @@ export function PassList({ passes, hasObserver, satrec, observer }: PassListProp
             type="button"
             className="pass-list__row"
             aria-expanded={isExpanded}
+            aria-label={
+              `Pass on ${dayFormat.format(pass.aos.time)} from ` +
+              `${timeFormat.format(pass.aos.time)} to ${timeFormat.format(pass.los.time)}, ` +
+              `peak ${spokenBearing(pass.maximum.elevation, pass.maximum.compass)}, ` +
+              `${VISIBILITY_LABEL[pass.visibility]}. Activate to plot it on the sky.`
+            }
             onClick={() => {
               setExpandedKey(isExpanded ? undefined : key);
             }}
@@ -152,6 +162,7 @@ export function PassList({ passes, hasObserver, satrec, observer }: PassListProp
         </li>
         );
       })}
-    </ol>
+      </ol>
+    </>
   );
 }

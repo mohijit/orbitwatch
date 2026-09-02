@@ -1,6 +1,6 @@
-import { useLocalSearchParams, useNavigation } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 
 import {
   assessAccuracy,
@@ -18,6 +18,8 @@ import {
 } from "@orbitwatch/orbit-core";
 
 import { fetchElements } from "@/lib/api";
+import { parseCatalogId } from "@/lib/deep-links";
+import { sharePassText, shareSatelliteText } from "@/lib/share";
 import { loadObserver, loadWatchlist, saveWatchlist } from "@/lib/storage";
 import { MONO, theme } from "@/lib/theme";
 
@@ -67,8 +69,19 @@ const timeFormat = new Intl.DateTimeFormat(undefined, {
 });
 
 export default function SatelliteDetailScreen() {
-  const { catalogId } = useLocalSearchParams<{ catalogId: string }>();
+  const params = useLocalSearchParams<{ catalogId: string }>();
+
+  /*
+   * The route parameter is untrusted.
+   *
+   * This screen is reachable by deep link, so `catalogId` can be any string somebody
+   * put in a URL. It is validated with the same rule the link parser uses — one
+   * definition, applied at both entry points — and an invalid one never reaches a
+   * request. `?? ""` keeps the value a string so the hooks below stay unconditional.
+   */
+  const catalogId = parseCatalogId(params.catalogId ?? "") ?? "";
   const navigation = useNavigation();
+  const router = useRouter();
 
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [observer, setObserver] = useState<ObserverLocation | undefined>(undefined);
@@ -83,6 +96,7 @@ export default function SatelliteDetailScreen() {
   }, [catalogId]);
 
   useEffect(() => {
+    if (catalogId === "") return;
     let cancelled = false;
     setState({ status: "loading" });
 
@@ -133,6 +147,20 @@ export default function SatelliteDetailScreen() {
     if (state.status === "ready") navigation.setOptions({ title: state.name });
   }, [state, navigation]);
 
+  const share = useCallback(
+    async (pass: SatellitePass | undefined) => {
+      if (state.status !== "ready") return;
+      // The pass-specific text carries the caveats a bare object link cannot: which
+      // night, from where, and whether it can actually be seen.
+      const message =
+        pass === undefined
+          ? shareSatelliteText(catalogId, state.name)
+          : sharePassText({ catalogId, name: state.name, pass, observer });
+      await Share.share({ message });
+    },
+    [state, catalogId, observer],
+  );
+
   const toggleWatch = useCallback(async () => {
     const current = await loadWatchlist();
     const next = current.includes(catalogId)
@@ -141,6 +169,17 @@ export default function SatelliteDetailScreen() {
     await saveWatchlist(next);
     setWatched(next.includes(catalogId));
   }, [catalogId]);
+
+  if (catalogId === "") {
+    return (
+      <View style={styles.centre}>
+        <Text style={styles.error}>
+          &ldquo;{params.catalogId}&rdquo; is not a catalog number. Catalog numbers are
+          digits, so this link cannot refer to an object.
+        </Text>
+      </View>
+    );
+  }
 
   if (state.status === "loading") {
     return (
@@ -240,6 +279,9 @@ export default function SatelliteDetailScreen() {
       )}
 
       <Text style={styles.section}>Next 24 hours</Text>
+      {passes.length === 0 ? null : (
+        <Text style={styles.note}>Tap a pass to share it.</Text>
+      )}
       {observer === undefined ? (
         <Text style={styles.note}>Set an observing location to see passes.</Text>
       ) : passes.length === 0 ? (
@@ -249,21 +291,37 @@ export default function SatelliteDetailScreen() {
       ) : (
         <View style={styles.card}>
           {passes.map((pass) => (
-            <View key={pass.aos.time.toISOString()} style={styles.passRow}>
+            <Pressable
+              key={pass.aos.time.toISOString()}
+              style={({ pressed }) => [styles.passRow, pressed && styles.pressed]}
+              onPress={() => {
+                void share(pass);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Share the pass at ${timeFormat.format(pass.aos.time)}`}
+            >
               <Text style={styles.passTime}>
                 {timeFormat.format(pass.aos.time)} → {timeFormat.format(pass.los.time)}
               </Text>
               <Text style={styles.passGeometry}>
                 max {pass.maximum.elevation.toFixed(0)}° {pass.maximum.compass}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
       )}
 
       <Text style={styles.footnote}>
         Position calculated on this device from published orbital elements using
-        SGP4/SDP4. It is not continuous onboard GPS telemetry.
+        SGP4/SDP4. It is not continuous onboard GPS telemetry.{" "}
+        <Text
+          style={styles.link}
+          onPress={() => {
+            router.push("/agreement");
+          }}
+        >
+          Check this device agrees with every other platform.
+        </Text>
       </Text>
     </ScrollView>
   );
@@ -324,4 +382,5 @@ const styles = StyleSheet.create({
   passTime: { color: theme.text, fontSize: 12, fontFamily: MONO.default },
   passGeometry: { color: theme.textMuted, fontSize: 12, fontFamily: MONO.default },
   footnote: { color: theme.textMuted, fontSize: 11, lineHeight: 16, marginTop: 6 },
+  link: { color: theme.accent, textDecorationLine: "underline" },
 });

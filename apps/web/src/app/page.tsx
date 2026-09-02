@@ -110,6 +110,14 @@ export default function HomePage() {
 
   return (
     <main className="shell">
+      {/*
+        The globe is the product, and it is the LAST thing a keyboard user would reach
+        by tabbing through a header of controls. This puts it one key away.
+      */}
+      <a className="shell__skip" href="#globe">
+        Skip to the globe
+      </a>
+
       <header className="shell__bar">
         <span className="shell__brand">{BRANDING.name}</span>
         <CommandPalette onSelect={setSelectedCatalogId} />
@@ -167,6 +175,26 @@ export default function HomePage() {
           onRefresh={refreshVisibleTonight}
         />
       </aside>
+
+      {/*
+        Selecting a satellite opens a panel somewhere else on the page. A sighted user
+        sees it appear; without this, a screen-reader user gets nothing at all, because
+        focus has not moved and the change is off-screen. Polite rather than assertive:
+        it should be spoken at the next pause, not cut off whatever is being read.
+      */}
+      <p
+        className="shell__visually-hidden"
+        role="status"
+        aria-live="polite"
+        data-testid="selection-status"
+      >
+        {selectedCatalogId === undefined
+          ? "No satellite selected."
+          : telemetry.status === "ready"
+            ? `Selected ${telemetry.name}, catalog number ${selectedCatalogId}. ` +
+              `Telemetry, look angles and passes are now shown.`
+            : `Loading satellite ${selectedCatalogId}.`}
+      </p>
 
       <Timeline time={time} mode={mode} onChange={handleTimelineChange} />
 

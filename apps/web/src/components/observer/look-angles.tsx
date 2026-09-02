@@ -1,5 +1,7 @@
 "use client";
 
+import { spokenBearing, spokenElevation, spokenRangeRate } from "../../lib/spoken";
+
 import type { LookAngles } from "@orbitwatch/orbit-core";
 
 /**
@@ -39,7 +41,10 @@ export function LookAnglesInstrument({ lookAngles, hasObserver }: LookAnglesInst
   }
 
   return (
-    <div className="look-angles" data-testid="look-angles">
+    <section className="look-angles" data-testid="look-angles" aria-labelledby="look-angles-heading">
+      <h3 id="look-angles-heading" className="telemetry-panel__section-heading">
+        Look angles
+      </h3>
       <div
         className={`look-angles__horizon look-angles__horizon--${
           lookAngles.aboveHorizon ? "up" : "down"
@@ -51,18 +56,34 @@ export function LookAnglesInstrument({ lookAngles, hasObserver }: LookAnglesInst
 
       <dl className="look-angles__facts">
         <dt>Azimuth</dt>
-        <dd data-testid="look-angles-azimuth">
+        <dd
+          data-testid="look-angles-azimuth"
+          aria-label={spokenBearing(lookAngles.azimuth, lookAngles.compass)}
+        >
           {lookAngles.azimuth.toFixed(1)}° {lookAngles.compass}
         </dd>
 
         <dt>Elevation</dt>
-        <dd data-testid="look-angles-elevation">{lookAngles.elevation.toFixed(1)}°</dd>
+        <dd
+          data-testid="look-angles-elevation"
+          aria-label={spokenElevation(lookAngles.elevation)}
+        >
+          {lookAngles.elevation.toFixed(1)}°
+        </dd>
 
         <dt>Range</dt>
-        <dd data-testid="look-angles-range">{Math.round(lookAngles.range).toLocaleString()} km</dd>
+        <dd
+          data-testid="look-angles-range"
+          aria-label={`${Math.round(lookAngles.range).toLocaleString()} kilometres`}
+        >
+          {Math.round(lookAngles.range).toLocaleString()} km
+        </dd>
 
         <dt>Range rate</dt>
-        <dd data-testid="look-angles-range-rate">
+        <dd
+          data-testid="look-angles-range-rate"
+          aria-label={spokenRangeRate(lookAngles.rangeRate)}
+        >
           {lookAngles.rangeRate >= 0 ? "+" : "−"}
           {Math.abs(lookAngles.rangeRate).toFixed(2)} km/s{" "}
           <span className="look-angles__hint">
@@ -77,6 +98,6 @@ export function LookAnglesInstrument({ lookAngles, hasObserver }: LookAnglesInst
           real, the line of sight is through the Earth.
         </p>
       )}
-    </div>
+    </section>
   );
 }

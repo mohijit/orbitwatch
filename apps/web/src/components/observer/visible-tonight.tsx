@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 
+import { spokenBearing } from "../../lib/spoken";
+
 import type { VisibleTonightState } from "../../hooks/use-catalog-positions";
 import type { VisiblePass } from "../../workers/pass-messages";
 
@@ -115,12 +117,18 @@ export function VisibleTonightPanel({
               both sunlit and above 10° while your sky is dark.
             </p>
           ) : (
-            <ol className="visible-tonight__list">
+            <ol className="visible-tonight__list" aria-label="Passes visible tonight">
               {worthSeeing.map((pass) => (
                 <li
                   className="visible-tonight__item"
                   key={`${pass.catalogId}-${pass.aos.time.toISOString()}`}
                   data-testid="visible-tonight-pass"
+                  aria-label={
+                    `${pass.name} at ${timeFormat.format(pass.aos.time)}, peak ` +
+                    `${spokenBearing(pass.maximum.elevation, pass.maximum.compass)}, ` +
+                    `lasting ${String(Math.round(pass.durationSeconds / 60))} minutes. ` +
+                    `${pass.visibility === "LIKELY_VISIBLE" ? "Likely visible" : "Possibly visible"}.`
+                  }
                 >
                   <span className="visible-tonight__time">
                     {timeFormat.format(pass.aos.time)}

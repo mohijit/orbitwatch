@@ -101,3 +101,19 @@ export {
   type ElementSelection,
   type PropagationConfidence,
 } from "./accuracy.js";
+
+export {
+  ANGLE_TOLERANCE_DEGREES,
+  DISTANCE_TOLERANCE_KM,
+  TIME_TOLERANCE_MS,
+  compareAgreement,
+  computeAgreement,
+  runAgreement,
+  type AgreementCase,
+  type AgreementDeviation,
+  type AgreementObserver,
+  type AgreementPass,
+  type AgreementReport,
+  type AgreementResult,
+  type AgreementSample,
+} from "./agreement.js";

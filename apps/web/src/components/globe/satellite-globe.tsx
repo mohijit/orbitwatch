@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ObserverLocation } from "@orbitwatch/orbit-core";
 
@@ -78,6 +78,65 @@ export function SatelliteGlobe({
   const cesiumRef = useRef<CesiumModule | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+
+  /**
+   * Camera control without a pointer.
+   *
+   * Cesium ships mouse and touch handlers and no keyboard ones, so a globe is
+   * ordinarily unreachable for anyone who cannot drag it. These are the same three
+   * gestures — rotate, zoom, reset — bound to the keys people already expect.
+   *
+   * `preventDefault` matters more than it looks: arrow keys scroll the document by
+   * default, so without it a focused globe would scroll the page out from under
+   * itself while appearing to ignore the key. That is worse than no handler at all.
+   *
+   * Amounts are proportional to the camera's height above the ellipsoid, so one press
+   * moves a sensible fraction of what is on screen whether the view is the whole Earth
+   * or one city.
+   */
+  const handleGlobeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (viewer === null || Cesium === null) return;
+
+    const camera = viewer.camera;
+    const height = camera.positionCartographic.height;
+    const moveRate = height / 20;
+    const rotateRadians = Cesium.Math.toRadians(3);
+
+    switch (event.key) {
+      case "ArrowLeft":
+        camera.rotateRight(rotateRadians);
+        break;
+      case "ArrowRight":
+        camera.rotateLeft(rotateRadians);
+        break;
+      case "ArrowUp":
+        camera.rotateDown(rotateRadians);
+        break;
+      case "ArrowDown":
+        camera.rotateUp(rotateRadians);
+        break;
+      case "+":
+      case "=":
+        camera.moveForward(moveRate);
+        break;
+      case "-":
+      case "_":
+        camera.moveBackward(moveRate);
+        break;
+      case "Home":
+        camera.flyHome(0.5);
+        break;
+      default:
+        // Every other key — Tab included — must keep its normal behaviour, or the
+        // globe becomes a place focus goes into and cannot leave.
+        return;
+    }
+
+    event.preventDefault();
+    viewer.scene.requestRender();
+  }, []);
   // The Cesium input handler is installed once, so it must read these through refs
   // rather than closing over the values that existed when the viewer was built.
   const pickingRef = useRef(pickingLocation);
@@ -186,6 +245,22 @@ export function SatelliteGlobe({
           onSelectRef.current(undefined);
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+      /*
+       * One tab stop for the globe, not two.
+       *
+       * Cesium gives its canvas `tabindex="0"` and focuses it during initialisation.
+       * That produced two problems at once: a second, unlabelled tab stop for the same
+       * widget, and — because it happens on load — focus sitting in the middle of the
+       * page before the user has pressed anything, so their first Tab moved on from
+       * the globe instead of reaching the skip link.
+       *
+       * The container above is the accessible interface: it is labelled, it carries
+       * the key handlers, and it is where focus should land. The canvas is taken out
+       * of the tab order and blurred, which leaves exactly one way in.
+       */
+      viewer.canvas.setAttribute("tabindex", "-1");
+      if (document.activeElement === viewer.canvas) viewer.canvas.blur();
 
       viewerRef.current = viewer;
       // Last, and only after every ref above is populated: this is what re-runs the
@@ -392,7 +467,28 @@ export function SatelliteGlobe({
     <>
       <link rel="stylesheet" href={CESIUM_WIDGET_CSS_HREF} />
       <div className="globe-root">
-        <div ref={containerRef} className="globe-canvas" />
+        {/*
+          role="application" is correct here and almost nowhere else.
+          A WebGL canvas exposes no accessible structure — there is no tree to publish.
+          What it can do is accept keys, and this role is what stops a screen reader
+          intercepting them so the camera controls below actually reach the globe. The
+          app uses it exactly once, for the one element where there is nothing to
+          describe and something to operate.
+        */}
+        <div
+          ref={containerRef}
+          id="globe"
+          className="globe-canvas"
+          role="application"
+          tabIndex={0}
+          aria-label={
+            "Interactive 3-D globe showing satellite positions. " +
+            "Use the arrow keys to rotate, plus and minus to zoom, and Home to reset the view. " +
+            "Satellites are three pixels wide and cannot reliably be selected here: " +
+            "use the search button, or Control-K, to choose one by name."
+          }
+          onKeyDown={handleGlobeKeyDown}
+        />
 
         {catalogState.status === "loading" ? (
           <div className="globe-overlay" role="status" aria-live="polite">
