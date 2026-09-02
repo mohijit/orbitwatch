@@ -124,6 +124,24 @@
       "purpose": "Expected positions, look angles and pass times for the M6 cross-platform agreement gate. Every platform is measured against these committed numbers rather than against another platform's run.",
       "truncated": false,
       "notes": "NOT a provider response. Derived from celestrak-gp-e2e-subset.json by packages/orbit-core/src/cli/generate-agreement-fixture.ts, which embeds four of its real OMM records verbatim and computes the expected values once on Node (V8). No new provider request was made to produce this file. Regenerate only when the source elements change, and review the resulting diff."
+    },
+    {
+      "file": "satnogs-network-stations.json",
+      "provider": "satnogs-network",
+      "endpoint": "https://network.satnogs.org/api/stations/?format=json&page_size=25",
+      "retrievedAt": "2026-09-02T00:00:00.000Z",
+      "purpose": "Verify the ground station shape: position, per-station minimum horizon, status, antenna bands and last-seen.",
+      "truncated": true,
+      "notes": "The full listing returned 4,452 stations and 3.4 MB; page_size was ignored by the API. Trimmed to a representative 44 covering all three status values (Online, Offline, Testing), stations with and without antennas, and both hemispheres. Of the full set, 4,119 were Offline, 317 Online and 16 Testing \u2014 a volunteer network is mostly dormant at any moment, which is why status is carried through rather than counted away."
+    },
+    {
+      "file": "nasa-donki-notifications.json",
+      "provider": "nasa-donki",
+      "endpoint": "https://api.nasa.gov/DONKI/notifications?startDate=2026-08-01&endDate=2026-08-31&type=all",
+      "retrievedAt": "2026-09-02T00:00:00.000Z",
+      "purpose": "Verify the DONKI notification shape: message type, id, issue time and narrative body.",
+      "truncated": false,
+      "notes": "74 notifications across August 2026, spanning CME, GST, FLR, SEP, RBE, IPS, MPC and Report. Fetched with NASA's public demonstration key, which is heavily throttled; set NASA_API_KEY for production. The key parameter is omitted from the endpoint above on purpose: the manifest is scanned for anything resembling a credential, and a documented exception in prose is safer than teaching that scanner to ignore a pattern. messageIssueTime carries minute precision with no seconds."
     }
   ],
   "blocked": []

@@ -43,17 +43,38 @@ const loadFixture = (name: string): unknown =>
 describe("fixture manifest", () => {
   it("records provenance for every committed fixture", () => {
     const manifest = loadFixture("manifest.json") as {
-      fixtures: { file: string; endpoint: string; retrievedAt: string; purpose: string }[];
+      fixtures: {
+        file: string;
+        provider: string;
+        endpoint: string | null;
+        retrievedAt: string | null;
+        purpose: string;
+        notes?: string;
+      }[];
       blocked: { provider: string; status: string; reason: string }[];
     };
 
     expect(manifest.fixtures.length).toBeGreaterThan(0);
     for (const entry of manifest.fixtures) {
-      expect(entry.endpoint).toMatch(/^https:\/\//);
       expect(entry.purpose.length).toBeGreaterThan(10);
-      expect(Number.isNaN(Date.parse(entry.retrievedAt))).toBe(false);
       // The fixture it describes must actually exist.
       expect(() => loadFixture(entry.file)).not.toThrow();
+
+      if (entry.provider === "derived") {
+        /*
+         * A derived fixture was computed by this repository, not captured from a
+         * provider, so it has no endpoint and no retrieval time — and claiming either
+         * would be the exact misrepresentation the manifest exists to prevent. What it
+         * must have instead is an explanation of what produced it, so the numbers can
+         * be regenerated and audited.
+         */
+        expect(entry.endpoint).toBeNull();
+        expect(entry.retrievedAt).toBeNull();
+        expect((entry.notes ?? "").length).toBeGreaterThan(40);
+      } else {
+        expect(entry.endpoint).toMatch(/^https:\/\//);
+        expect(Number.isNaN(Date.parse(entry.retrievedAt as string))).toBe(false);
+      }
     }
 
     // Blocked providers must be recorded as blocked, never quietly mocked.

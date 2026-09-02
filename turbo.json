@@ -35,7 +35,12 @@
       "dependsOn": [
         "^build"
       ],
-      "outputs": []
+      "outputs": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../fixtures/**",
+        "fixtures/**"
+      ]
     },
     "test:watch": {
       "cache": false,
