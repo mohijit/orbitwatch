@@ -9,6 +9,8 @@ import { PassList } from "@/components/observer/pass-list";
 import { VisibleTonightPanel } from "@/components/observer/visible-tonight";
 import { RadioPanel } from "@/components/telemetry/radio-panel";
 import { SpaceWeatherPanel } from "@/components/telemetry/space-weather";
+import { ImageryPicker } from "@/components/globe/imagery-picker";
+import { PanelRail } from "@/components/shell/panel-rail";
 import { SolarEvents } from "@/components/telemetry/solar-events";
 import { UpcomingLaunches } from "@/components/telemetry/upcoming-launches";
 import { CommandPalette } from "@/components/search/command-palette";
@@ -17,6 +19,7 @@ import { Timeline, type TimelineMode } from "@/components/timeline/timeline";
 import { useCatalogPositions } from "@/hooks/use-catalog-positions";
 import { useObserver } from "@/hooks/use-observer";
 import { useObserverTelemetry } from "@/hooks/use-observer-telemetry";
+import { usePanels } from "@/hooks/use-panels";
 import { useVisualGroup } from "@/hooks/use-visual-group";
 import { useSelectedSatellite } from "@/hooks/use-selected-satellite";
 import { BRANDING } from "@/lib/branding";
@@ -34,6 +37,8 @@ export default function HomePage() {
   const [mode, setMode] = useState<TimelineMode>("live");
   const [selectedCatalogId, setSelectedCatalogId] = useState<string | undefined>(undefined);
   const [pickingLocation, setPickingLocation] = useState(false);
+  const [imageryLayerId, setImageryLayerId] = useState<string | undefined>(undefined);
+  const panels = usePanels();
 
   // LIVE mode means "now, continuously": advance the clock every second, which
   // matches the worker's default 1 Hz tick rate. SIMULATION freezes it at whatever
@@ -162,6 +167,7 @@ export default function HomePage() {
         observer={observer.location}
         pickingLocation={pickingLocation}
         onPickLocation={handlePickLocation}
+        imageryLayerId={imageryLayerId}
       />
 
       {pickingLocation ? (
@@ -188,17 +194,59 @@ export default function HomePage() {
         />
       </TelemetryPanel>
 
-      <aside className="tonight-panel" aria-label="Visible tonight">
-        <SpaceWeatherPanel />
-        <SolarEvents />
-        <UpcomingLaunches />
-        <VisibleTonightPanel
-          state={worker.visibleTonight}
-          hasObserver={observer.location !== undefined}
-          groupUnavailable={visualGroup.status === "unavailable"}
-          onRefresh={refreshVisibleTonight}
-        />
-      </aside>
+      <PanelRail
+        open={panels.open}
+        visible={panels.railVisible}
+        onToggle={panels.toggle}
+        onSetVisible={panels.setRailVisible}
+      />
+
+      {/*
+        Only the open panels are rendered, not merely hidden with CSS.
+
+        Each of these fetches on mount and refreshes on a timer, so keeping a closed
+        panel mounted would poll four providers for a user looking at the globe. It
+        also means the stack has no height when nothing is open, which is what makes
+        "just show me the Earth" actually show them the Earth.
+      */}
+      {panels.railVisible && Object.values(panels.open).some(Boolean) ? (
+        <aside className="panel-stack" aria-label="Information panels">
+          {panels.open.tonight ? (
+            <div className="panel-stack__panel">
+              <VisibleTonightPanel
+                state={worker.visibleTonight}
+                hasObserver={observer.location !== undefined}
+                groupUnavailable={visualGroup.status === "unavailable"}
+                onRefresh={refreshVisibleTonight}
+              />
+            </div>
+          ) : null}
+
+          {panels.open.weather ? (
+            <div className="panel-stack__panel">
+              <SpaceWeatherPanel />
+            </div>
+          ) : null}
+
+          {panels.open.solar ? (
+            <div className="panel-stack__panel">
+              <SolarEvents />
+            </div>
+          ) : null}
+
+          {panels.open.launches ? (
+            <div className="panel-stack__panel">
+              <UpcomingLaunches />
+            </div>
+          ) : null}
+
+          {panels.open.imagery ? (
+            <div className="panel-stack__panel">
+              <ImageryPicker selected={imageryLayerId} onSelect={setImageryLayerId} />
+            </div>
+          ) : null}
+        </aside>
+      ) : null}
 
       {/*
         Selecting a satellite opens a panel somewhere else on the page. A sighted user

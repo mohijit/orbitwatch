@@ -106,7 +106,17 @@ test("a satellite can be found and selected with the keyboard alone", async ({ p
   await expect(page.getByPlaceholder(/search by name/i)).toBeFocused();
 
   await page.keyboard.type("ISS");
-  await expect(page.getByRole("option", { name: /ISS \(ZARYA\)/ })).toBeVisible({
+
+  /*
+   * Wait for the FIRST option to be the ISS, not merely for it to appear somewhere.
+   *
+   * Enter selects the highlighted row, which is always index 0. Asserting only that
+   * the ISS is visible passes against the unfiltered list — which contains it — and
+   * then Enter picks whatever happens to be first, giving a confident pass on the
+   * wrong satellite. The search is debounced, so this is a real race and not a
+   * theoretical one: it selected TEMPSAT 1.
+   */
+  await expect(page.getByRole("option").first()).toContainText("ISS (ZARYA)", {
     timeout: 30_000,
   });
   await page.keyboard.press("Enter");

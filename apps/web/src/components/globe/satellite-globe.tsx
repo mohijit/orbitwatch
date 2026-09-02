@@ -8,6 +8,7 @@ import type { CatalogTickState } from "../../hooks/use-catalog-positions";
 import { POSITION_FIELDS } from "../../hooks/use-catalog-positions";
 import type { SelectedTelemetryState } from "../../hooks/use-selected-satellite";
 import { CESIUM_WIDGET_CSS_HREF, loadCesium, type CesiumModule } from "./cesium-loader";
+import { GIBS_ATTRIBUTION, findGibsLayer, gibsTileUrl, imageryDateFor } from "./imagery";
 import type * as CesiumNamespace from "cesium";
 
 /**
@@ -55,6 +56,13 @@ export interface SatelliteGlobeProps {
    */
   readonly pickingLocation: boolean;
   readonly onPickLocation: (latitude: number, longitude: number) => void;
+  /**
+   * Which NASA imagery layer to overlay, or undefined for the bundled base map.
+   *
+   * A prop rather than internal state: the control lives in the panel stack with
+   * everything else, and this app keeps state in the page and flows it one way down.
+   */
+  readonly imageryLayerId: string | undefined;
 }
 
 type CesiumViewer = InstanceType<CesiumModule["Viewer"]>;
@@ -69,6 +77,7 @@ export function SatelliteGlobe({
   observer,
   pickingLocation,
   onPickLocation,
+  imageryLayerId,
 }: SatelliteGlobeProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
@@ -159,6 +168,9 @@ export function SatelliteGlobe({
    * point collection back out of the live scene and saw zero primitives in it.
    */
   const [globeReady, setGlobeReady] = useState(false);
+
+  /** The layer object currently applied, so it can be removed on change. */
+  const overlayRef = useRef<unknown>(null);
 
   // Viewer: created once.
   useEffect(() => {
@@ -462,6 +474,48 @@ export function SatelliteGlobe({
 
     viewer.scene.requestRender();
   }, [globeReady, observer]);
+
+  /**
+   * Apply or remove the NASA imagery overlay.
+   *
+   * Added as an overlay on top of Natural Earth rather than replacing the base layer:
+   * GIBS has no tiles over the poles at every zoom and a failed tile would leave a hole
+   * in the globe, where an overlay simply shows the base map through.
+   */
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!globeReady || viewer === null || Cesium === null) return;
+
+    const layers = viewer.imageryLayers as {
+      addImageryProvider: (provider: unknown) => unknown;
+      remove: (layer: unknown, destroy?: boolean) => void;
+    };
+
+    if (overlayRef.current !== null) {
+      layers.remove(overlayRef.current, true);
+      overlayRef.current = null;
+    }
+
+    const layer = imageryLayerId === undefined ? undefined : findGibsLayer(imageryLayerId);
+    if (layer !== undefined) {
+      const provider = new Cesium.WebMapTileServiceImageryProvider({
+        url: gibsTileUrl(layer, imageryDateFor(new Date())),
+        layer: layer.product,
+        style: "default",
+        format: layer.format === "jpg" ? "image/jpeg" : "image/png",
+        tileMatrixSetID: "250m",
+        maximumLevel: layer.maxLevel,
+        tilingScheme: new Cesium.GeographicTilingScheme(),
+        // Credit travels with the layer, so turning it on and crediting it cannot come
+        // apart in a later edit.
+        credit: new Cesium.Credit(GIBS_ATTRIBUTION),
+      });
+      overlayRef.current = layers.addImageryProvider(provider);
+    }
+
+    viewer.scene.requestRender();
+  }, [globeReady, imageryLayerId]);
 
   return (
     <>

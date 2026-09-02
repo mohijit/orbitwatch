@@ -442,20 +442,7 @@ html, body {
 
 /* ── M4: visible tonight ───────────────────────────────────────────────────────── */
 
-.tonight-panel {
-  position: absolute;
-  top: 4rem;
-  left: 1rem;
-  z-index: 9;
-  width: 20rem;
-  max-height: calc(100dvh - 12rem);
-  overflow-y: auto;
-  background: var(--ow-surface);
-  border: 1px solid var(--ow-border);
-  border-radius: 12px;
-  padding: 0.9rem;
-  backdrop-filter: blur(8px);
-}
+
 
 .visible-tonight__header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
 .visible-tonight__header .telemetry-panel__section-heading { margin: 0; }
@@ -691,3 +678,118 @@ html, body {
 .solar-events__label { grid-column: 2; color: var(--ow-text); }
 .solar-events__footnote { margin: 0.35rem 0 0; font-size: 0.62rem; line-height: 1.45; color: var(--ow-text-muted); }
 .solar-events__attribution { margin: 0.25rem 0 0; font-size: 0.6rem; color: var(--ow-text-muted); }
+
+/* The dated-imagery caveat. Deliberately not muted into invisibility. */
+
+/* ── panel rail ──────────────────────────────────────────────────────────────── */
+
+.panel-rail {
+  position: absolute;
+  top: 4rem;
+  left: 1rem;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 10px;
+  padding: 0.3rem;
+  backdrop-filter: blur(8px);
+}
+.panel-rail__button,
+.panel-rail__hide {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--ow-text-muted);
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.panel-rail__button:hover,
+.panel-rail__hide:hover { background: rgba(148, 176, 214, 0.08); color: var(--ow-text); }
+.panel-rail__button--on { color: var(--ow-accent); background: rgba(53, 200, 245, 0.1); }
+.panel-rail__button:focus-visible,
+.panel-rail__hide:focus-visible,
+.panel-rail__restore:focus-visible { outline: 2px solid var(--ow-accent); outline-offset: 2px; }
+.panel-rail__glyph { width: 1rem; text-align: center; font-size: 0.8rem; }
+.panel-rail__hide { border-top: 1px solid var(--ow-border); border-radius: 0 0 6px 6px; margin-top: 0.15rem; padding-top: 0.4rem; }
+
+/* The single control left when everything is hidden. Small, but never absent. */
+.panel-rail__restore {
+  position: absolute;
+  top: 4rem;
+  left: 1rem;
+  z-index: 10;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 8px;
+  color: var(--ow-text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.panel-rail__restore:hover { color: var(--ow-text); }
+
+/* ── panel stack ─────────────────────────────────────────────────────────────── */
+
+.panel-stack {
+  position: absolute;
+  top: 4rem;
+  /* Clear of the rail, which is 1rem from the edge and about 9rem wide. */
+  left: 11rem;
+  z-index: 9;
+  width: 20rem;
+  max-height: calc(100dvh - 12rem);
+  overflow-y: auto;
+  display: grid;
+  gap: 0.5rem;
+}
+.panel-stack__panel {
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 12px;
+  padding: 0.8rem;
+  backdrop-filter: blur(8px);
+}
+/* Each panel is its own card now, so the internal dividers between them are noise. */
+.panel-stack__panel .space-weather,
+.panel-stack__panel .solar-events,
+.panel-stack__panel .launches {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* ── imagery picker ──────────────────────────────────────────────────────────── */
+
+.imagery-picker__group { border: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.imagery-picker__option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.4rem;
+  font-size: 0.7rem;
+  color: var(--ow-text);
+  cursor: pointer;
+}
+.imagery-picker__option input { accent-color: var(--ow-accent); margin-top: 0.15rem; }
+.imagery-picker__label { font-weight: 500; }
+.imagery-picker__description { grid-column: 2; font-size: 0.62rem; line-height: 1.4; color: var(--ow-text-muted); }
+/* The dated-imagery caveat. Deliberately not muted into invisibility. */
+.imagery-picker__date {
+  margin: 0.5rem 0 0;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  color: var(--ow-text);
+  border-left: 2px solid var(--ow-accent);
+  padding-left: 0.5rem;
+}
