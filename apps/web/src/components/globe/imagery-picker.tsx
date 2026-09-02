@@ -1,6 +1,6 @@
 "use client";
 
-import { GIBS_LAYERS, findGibsLayer, imageryDateFor } from "./imagery";
+import { GIBS_LAYERS, findGibsLayer, imageryCaveat } from "./imagery";
 
 /**
  * Choose the globe's imagery, and say what choosing it means.
@@ -25,6 +25,8 @@ export interface ImageryPickerProps {
 }
 
 export function ImageryPicker({ selected, onSelect }: ImageryPickerProps) {
+  const selectedLayer = selected === undefined ? undefined : findGibsLayer(selected);
+
   return (
     <section className="imagery-picker" data-testid="imagery-picker">
       <h2 className="telemetry-panel__section-heading">Imagery</h2>
@@ -58,9 +60,11 @@ export function ImageryPicker({ selected, onSelect }: ImageryPickerProps) {
         })}
       </fieldset>
 
-      {selected === undefined ? null : (
+      {selectedLayer === undefined ? null : (
+        // Derived from the layer, because not every product is a daily observation and
+        // stamping a date on one that has none would be a small invention.
         <p className="imagery-picker__date" data-testid="imagery-date">
-          Imagery from {imageryDateFor(new Date())} · satellite positions are live
+          {imageryCaveat(selectedLayer, new Date())}
         </p>
       )}
     </section>

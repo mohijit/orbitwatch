@@ -8,7 +8,17 @@ import type { CatalogTickState } from "../../hooks/use-catalog-positions";
 import { POSITION_FIELDS } from "../../hooks/use-catalog-positions";
 import type { SelectedTelemetryState } from "../../hooks/use-selected-satellite";
 import { CESIUM_WIDGET_CSS_HREF, loadCesium, type CesiumModule } from "./cesium-loader";
-import { GIBS_ATTRIBUTION, findGibsLayer, gibsTileUrl, imageryDateFor } from "./imagery";
+import {
+  GIBS_ATTRIBUTION,
+  GIBS_LEVEL_ZERO_TILES_X,
+  GIBS_LEVEL_ZERO_TILES_Y,
+  GIBS_TILE_SIZE,
+  findGibsLayer,
+  gibsMaximumLevel,
+  gibsTileMatrixLabels,
+  gibsTileUrl,
+  imageryDateFor,
+} from "./imagery";
 import type * as CesiumNamespace from "cesium";
 
 /**
@@ -499,14 +509,34 @@ export function SatelliteGlobe({
 
     const layer = imageryLayerId === undefined ? undefined : findGibsLayer(imageryLayerId);
     if (layer !== undefined) {
+      /*
+       * Every one of these options is load-bearing; see the grid derivation in
+       * ./imagery.ts. Two bugs came from getting them wrong:
+       *
+       *   - `250m` hard-coded here meant night lights, published only at `500m`, asked
+       *     for a matrix set it does not have and got HTTP 400 on every tile. The
+       *     symptom is a layer that appears to do nothing at all.
+       *   - the default GeographicTilingScheme (2 x 1 at level zero, doubling) does not
+       *     match GIBS's grid, so tiles covering 144 degrees were painted into
+       *     rectangles covering 90, squeezing the imagery into a corner of the Earth.
+       *     Anchoring level zero on matrix 3 (10 x 5, exactly one globe) makes Cesium's
+       *     doubling and GIBS's agree, and tileMatrixLabels carries the +3 offset.
+       */
       const provider = new Cesium.WebMapTileServiceImageryProvider({
         url: gibsTileUrl(layer, imageryDateFor(new Date())),
         layer: layer.product,
         style: "default",
         format: layer.format === "jpg" ? "image/jpeg" : "image/png",
-        tileMatrixSetID: "250m",
-        maximumLevel: layer.maxLevel,
-        tilingScheme: new Cesium.GeographicTilingScheme(),
+        tileMatrixSetID: layer.tileMatrixSet,
+        tileMatrixLabels: gibsTileMatrixLabels(layer),
+        maximumLevel: gibsMaximumLevel(layer),
+        // Told explicitly: Cesium assumes 256 and cannot discover the real size.
+        tileWidth: GIBS_TILE_SIZE,
+        tileHeight: GIBS_TILE_SIZE,
+        tilingScheme: new Cesium.GeographicTilingScheme({
+          numberOfLevelZeroTilesX: GIBS_LEVEL_ZERO_TILES_X,
+          numberOfLevelZeroTilesY: GIBS_LEVEL_ZERO_TILES_Y,
+        }),
         // Credit travels with the layer, so turning it on and crediting it cannot come
         // apart in a later edit.
         credit: new Cesium.Credit(GIBS_ATTRIBUTION),
