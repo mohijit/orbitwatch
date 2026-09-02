@@ -638,3 +638,15 @@ html, body {
 .radio-panel__attribution { margin: 0.4rem 0 0; font-size: 0.6rem; line-height: 1.4; color: var(--ow-text-muted); }
 
 .shell__badge--error { color: #f4a548; }
+
+.space-weather { margin-bottom: 0.75rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--ow-border); }
+.space-weather__row { display: flex; align-items: baseline; gap: 0.7rem; font-family: ui-monospace, monospace; font-size: 0.78rem; }
+.space-weather__kp { font-weight: 600; }
+/* NOAA's own bands: 5 is the G1 storm threshold, not a gradient we invented. */
+.space-weather__kp--quiet { color: #4ade80; }
+.space-weather__kp--unsettled { color: #facc15; }
+.space-weather__kp--storm { color: #f4a548; }
+.space-weather__wind, .space-weather__scales { color: var(--ow-text-muted); }
+.space-weather__meaning { margin: 0.3rem 0 0; font-size: 0.68rem; line-height: 1.45; color: var(--ow-text-muted); }
+.space-weather__note { margin: 0.2rem 0 0; font-size: 0.68rem; line-height: 1.45; color: #f4a548; }
+.space-weather__attribution { margin: 0.3rem 0 0; font-size: 0.6rem; line-height: 1.4; color: var(--ow-text-muted); }

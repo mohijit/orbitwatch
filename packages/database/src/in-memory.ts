@@ -12,6 +12,8 @@ import type {
   RadioRepository,
   RadioTransmitter,
   SatelliteFilter,
+  SpaceWeatherObservation,
+  SpaceWeatherRepository,
   SatelliteRecord,
   SatelliteRepository,
   SatelliteGroupMembership,
@@ -37,6 +39,7 @@ export class InMemoryDatabase implements Database {
   readonly elements: OrbitalElementRepository;
   readonly groups: SatelliteGroupRepository;
   readonly radio: RadioRepository;
+  readonly spaceWeather: SpaceWeatherRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -47,6 +50,7 @@ export class InMemoryDatabase implements Database {
   /** Keyed `provider|group|catalogId`; none of the three can contain a pipe. */
   readonly #groups = new Map<string, SatelliteGroupMembership>();
   readonly #transmitters = new Map<string, RadioTransmitter>();
+  readonly #spaceWeather = new Map<string, SpaceWeatherObservation>();
   #nextId = 1;
   readonly #now: () => Date;
 
@@ -56,6 +60,7 @@ export class InMemoryDatabase implements Database {
     this.elements = this.#createElementRepository();
     this.groups = this.#createGroupRepository();
     this.radio = this.#createRadioRepository();
+    this.spaceWeather = this.#createSpaceWeatherRepository();
     this.providerRuns = this.#createProviderRunRepository();
     this.leases = this.#createLeaseRepository();
   }
@@ -438,6 +443,39 @@ export class InMemoryDatabase implements Database {
           .sort((a, b) => (a.downlinkLowHz ?? 0) - (b.downlinkLowHz ?? 0)),
 
       count: async () => transmitters.size,
+    };
+  }
+
+  #createSpaceWeatherRepository(): SpaceWeatherRepository {
+    const observations = this.#spaceWeather;
+    const key = (source: string, at: Date): string => `${source}|${at.toISOString()}`;
+
+    return {
+      record: async (incoming) => {
+        let inserted = 0;
+        let updated = 0;
+        for (const observation of incoming) {
+          const composite = key(observation.source, observation.observedAt);
+          if (observations.has(composite)) updated += 1;
+          else inserted += 1;
+          observations.set(composite, observation);
+        }
+        return { inserted, updated };
+      },
+
+      latest: async (source) =>
+        [...observations.values()]
+          .filter((observation) => observation.source === source)
+          .sort((a, b) => b.observedAt.getTime() - a.observedAt.getTime())[0],
+
+      since: async (source, from) =>
+        [...observations.values()]
+          .filter(
+            (observation) =>
+              observation.source === source &&
+              observation.observedAt.getTime() >= from.getTime(),
+          )
+          .sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime()),
     };
   }
 

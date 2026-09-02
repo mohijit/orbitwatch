@@ -905,6 +905,93 @@ export function runDatabaseContractTests(
       });
     });
 
+// ── space weather ────────────────────────────────────────────────────────
+
+    describe("space weather", () => {
+      const kpAt = (hours: number, kp: number) => ({
+        source: "planetary-k-index" as const,
+        observedAt: at(hours),
+        kp,
+        aRunning: 9,
+        solarWindSpeedKmS: undefined,
+        solarWindDensity: undefined,
+        bzNt: undefined,
+        radioBlackoutScale: undefined,
+        solarRadiationScale: undefined,
+        geomagneticScale: undefined,
+        retrievedAt: at(0),
+      });
+
+      it("stores an observation and reads back the latest", async () => {
+        expect(await db.spaceWeather.record([kpAt(-6, 2.33), kpAt(-3, 4.67)])).toEqual({
+          inserted: 2,
+          updated: 0,
+        });
+
+        const latest = await db.spaceWeather.latest("planetary-k-index");
+        expect(latest?.kp).toBe(4.67);
+        expect(latest?.observedAt.toISOString()).toBe(at(-3).toISOString());
+      });
+
+      it("refreshes rather than duplicating a republished instant", async () => {
+        // NOAA republishes overlapping windows on every poll, so the same instant
+        // arriving twice is the normal case and not a conflict.
+        await db.spaceWeather.record([kpAt(-3, 4.67)]);
+        expect(await db.spaceWeather.record([kpAt(-3, 5.0)])).toEqual({
+          inserted: 0,
+          updated: 1,
+        });
+        expect((await db.spaceWeather.latest("planetary-k-index"))?.kp).toBe(5.0);
+      });
+
+      it("keeps sources apart", async () => {
+        await db.spaceWeather.record([
+          kpAt(-3, 4.67),
+          {
+            ...kpAt(-1, 0),
+            source: "solar-wind" as const,
+            kp: undefined,
+            aRunning: undefined,
+            solarWindSpeedKmS: 428.1,
+            bzNt: -3.4,
+          },
+        ]);
+
+        expect((await db.spaceWeather.latest("planetary-k-index"))?.kp).toBe(4.67);
+        expect((await db.spaceWeather.latest("solar-wind"))?.solarWindSpeedKmS).toBe(428.1);
+        // A source that reports no Kp stores no Kp, rather than a zero that would
+        // average into a quiet reading.
+        expect((await db.spaceWeather.latest("solar-wind"))?.kp).toBeUndefined();
+      });
+
+      it("returns a window oldest first, which is how it is plotted", async () => {
+        await db.spaceWeather.record([kpAt(-12, 1), kpAt(-9, 2), kpAt(-6, 3), kpAt(-3, 4)]);
+
+        const window = await db.spaceWeather.since("planetary-k-index", at(-9));
+        expect(window.map((observation) => observation.kp)).toEqual([2, 3, 4]);
+      });
+
+      it("distinguishes the observed instant from the retrieval time", async () => {
+        // Solar wind is additionally propagated from the spacecraft to Earth, so what a
+        // sample DESCRIBES and when it was taken differ by about an hour.
+        await db.spaceWeather.record([kpAt(-3, 4.67)]);
+        const latest = await db.spaceWeather.latest("planetary-k-index");
+        expect(latest?.observedAt.toISOString()).toBe(at(-3).toISOString());
+        expect(latest?.retrievedAt.toISOString()).toBe(at(0).toISOString());
+      });
+
+      it("reports nothing stored rather than inventing quiet conditions", async () => {
+        // A tracker that showed Kp 0 when it had no data would be claiming calm
+        // conditions during a storm it simply had not fetched.
+        expect(await db.spaceWeather.latest("scales")).toBeUndefined();
+        expect(await db.spaceWeather.since("scales", at(-24))).toEqual([]);
+      });
+
+      it("treats an empty batch as a no-op", async () => {
+        expect(await db.spaceWeather.record([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
     // ── liveness ─────────────────────────────────────────────────────────────
 
     it("reports a non-negative ping latency", async () => {

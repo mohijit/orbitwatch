@@ -330,11 +330,63 @@ export interface RadioRepository {
   count(): Promise<number>;
 }
 
+/** Which NOAA product an observation came from. */
+export type SpaceWeatherSource = "planetary-k-index" | "solar-wind" | "scales";
+
+/**
+ * One space weather observation.
+ *
+ * Every measurement is optional because the three NOAA products report different
+ * quantities; a missing value means "this source does not publish that", which is a
+ * fact rather than a gap.
+ */
+export interface SpaceWeatherObservation {
+  readonly source: SpaceWeatherSource;
+  /** The instant the observation DESCRIBES, not when it was fetched. */
+  readonly observedAt: Date;
+  readonly kp: number | undefined;
+  readonly aRunning: number | undefined;
+  readonly solarWindSpeedKmS: number | undefined;
+  readonly solarWindDensity: number | undefined;
+  readonly bzNt: number | undefined;
+  readonly radioBlackoutScale: number | undefined;
+  readonly solarRadiationScale: number | undefined;
+  readonly geomagneticScale: number | undefined;
+  readonly retrievedAt: Date;
+}
+
+export interface SpaceWeatherRepository {
+  /**
+   * Insert or refresh observations, keyed on (source, observedAt).
+   *
+   * Upsert rather than append: NOAA republishes overlapping windows on every poll, and
+   * the same instant arriving twice is the normal case, not a conflict.
+   */
+  record(
+    observations: readonly SpaceWeatherObservation[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /** The most recent observation from a source, or undefined if none is stored. */
+  latest(source: SpaceWeatherSource): Promise<SpaceWeatherObservation | undefined>;
+
+  /**
+   * Observations from a source at or after `since`, oldest first.
+   *
+   * Ascending because the only consumer plots them left to right, and reversing a
+   * result set in the client is work the database has already done.
+   */
+  since(
+    source: SpaceWeatherSource,
+    since: Date,
+  ): Promise<readonly SpaceWeatherObservation[]>;
+}
+
 export interface Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
   readonly groups: SatelliteGroupRepository;
   readonly radio: RadioRepository;
+  readonly spaceWeather: SpaceWeatherRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
   /** Run migrations. Safe to call repeatedly; already-applied ones are skipped. */

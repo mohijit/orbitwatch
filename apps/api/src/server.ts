@@ -10,6 +10,7 @@ import { safeDetail } from "./redact.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerProviderRoutes } from "./routes/providers.js";
 import { registerSatelliteRoutes } from "./routes/satellites.js";
+import { registerSpaceWeatherRoutes } from "./routes/space-weather.js";
 
 /**
  * The OrbitWatch HTTP API.
@@ -189,6 +190,7 @@ export async function buildServer(
   await registerHealthRoutes(app, context);
   await registerProviderRoutes(app, context);
   await registerSatelliteRoutes(app, context);
+  registerSpaceWeatherRoutes(app, context);
 
   return app;
 }

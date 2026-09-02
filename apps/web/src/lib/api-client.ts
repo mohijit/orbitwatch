@@ -1,11 +1,13 @@
 import {
   catalogGroupResponseSchema,
   radioTransmittersResponseSchema,
+  spaceWeatherResponseSchema,
   elementsResponseSchema,
   satelliteListResponseSchema,
   type CatalogGroupResponse,
   type ElementsResponse,
   type RadioTransmittersResponse,
+  type SpaceWeatherResponse,
   type SatelliteListResponse,
 } from "@orbitwatch/contracts";
 
@@ -110,4 +112,14 @@ export async function fetchTransmitters(
   return radioTransmittersResponseSchema.parse(
     await getJson(`/satellites/${encodeURIComponent(catalogId)}/transmitters`),
   );
+}
+
+/**
+ * Current space weather.
+ *
+ * Global rather than per-satellite: it describes the environment every low-orbit object
+ * is flying through, and it is why an ageing element set degrades faster during a storm.
+ */
+export async function fetchSpaceWeather(): Promise<SpaceWeatherResponse> {
+  return spaceWeatherResponseSchema.parse(await getJson("/space-weather"));
 }

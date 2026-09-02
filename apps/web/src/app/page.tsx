@@ -8,6 +8,7 @@ import { ObserverPanel } from "@/components/observer/observer-panel";
 import { PassList } from "@/components/observer/pass-list";
 import { VisibleTonightPanel } from "@/components/observer/visible-tonight";
 import { RadioPanel } from "@/components/telemetry/radio-panel";
+import { SpaceWeatherPanel } from "@/components/telemetry/space-weather";
 import { CommandPalette } from "@/components/search/command-palette";
 import { TelemetryPanel } from "@/components/telemetry/telemetry-panel";
 import { Timeline, type TimelineMode } from "@/components/timeline/timeline";
@@ -186,6 +187,7 @@ export default function HomePage() {
       </TelemetryPanel>
 
       <aside className="tonight-panel" aria-label="Visible tonight">
+        <SpaceWeatherPanel />
         <VisibleTonightPanel
           state={worker.visibleTonight}
           hasObserver={observer.location !== undefined}

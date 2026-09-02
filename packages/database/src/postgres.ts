@@ -18,6 +18,8 @@ import type {
   RadioRepository,
   RadioTransmitter,
   SatelliteGroupRepository,
+  SpaceWeatherObservation,
+  SpaceWeatherRepository,
 } from "./repositories.js";
 
 /**
@@ -215,6 +217,7 @@ export class PostgresDatabase implements Database {
   readonly elements: OrbitalElementRepository;
   readonly groups: SatelliteGroupRepository;
   readonly radio: RadioRepository;
+  readonly spaceWeather: SpaceWeatherRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -228,6 +231,7 @@ export class PostgresDatabase implements Database {
     this.elements = createElementRepository(sql);
     this.groups = createGroupRepository(sql);
     this.radio = createRadioRepository(sql);
+    this.spaceWeather = createSpaceWeatherRepository(sql);
     this.providerRuns = createProviderRunRepository(sql);
     this.leases = createLeaseRepository(sql);
   }
@@ -887,6 +891,124 @@ function createRadioRepository(sql: Sql): RadioRepository {
     async count() {
       const rows = await sql<{ count: string }[]>`SELECT count(*)::text AS count FROM radio_transmitters`;
       return Number(rows[0]?.count ?? 0);
+    },
+  };
+}
+
+interface SpaceWeatherRow {
+  source: string;
+  observed_at: Date;
+  kp: number | null;
+  a_running: number | null;
+  solar_wind_speed_km_s: number | null;
+  solar_wind_density: number | null;
+  bz_nt: number | null;
+  radio_blackout_scale: number | null;
+  solar_radiation_scale: number | null;
+  geomagnetic_scale: number | null;
+  retrieved_at: Date;
+}
+
+function toObservation(row: SpaceWeatherRow): SpaceWeatherObservation {
+  return {
+    source: row.source as SpaceWeatherObservation["source"],
+    observedAt: row.observed_at,
+    kp: row.kp ?? undefined,
+    aRunning: row.a_running ?? undefined,
+    solarWindSpeedKmS: row.solar_wind_speed_km_s ?? undefined,
+    solarWindDensity: row.solar_wind_density ?? undefined,
+    bzNt: row.bz_nt ?? undefined,
+    radioBlackoutScale: row.radio_blackout_scale ?? undefined,
+    solarRadiationScale: row.solar_radiation_scale ?? undefined,
+    geomagneticScale: row.geomagnetic_scale ?? undefined,
+    retrievedAt: row.retrieved_at,
+  };
+}
+
+function createSpaceWeatherRepository(sql: Sql): SpaceWeatherRepository {
+  return {
+    async record(observations) {
+      if (observations.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(observations, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((observation) => ({
+              source: observation.source,
+              observed_at: observation.observedAt.toISOString(),
+              kp: observation.kp ?? null,
+              a_running: observation.aRunning ?? null,
+              solar_wind_speed_km_s: observation.solarWindSpeedKmS ?? null,
+              solar_wind_density: observation.solarWindDensity ?? null,
+              bz_nt: observation.bzNt ?? null,
+              radio_blackout_scale: observation.radioBlackoutScale ?? null,
+              solar_radiation_scale: observation.solarRadiationScale ?? null,
+              geomagnetic_scale: observation.geomagneticScale ?? null,
+              retrieved_at: observation.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO space_weather (
+            source, observed_at, kp, a_running,
+            solar_wind_speed_km_s, solar_wind_density, bz_nt,
+            radio_blackout_scale, solar_radiation_scale, geomagnetic_scale, retrieved_at
+          )
+          SELECT
+            i.source, i.observed_at, i.kp, i.a_running,
+            i.solar_wind_speed_km_s, i.solar_wind_density, i.bz_nt,
+            i.radio_blackout_scale, i.solar_radiation_scale, i.geomagnetic_scale,
+            i.retrieved_at
+          FROM json_to_recordset(${payload}::json) AS i(
+            source TEXT, observed_at TIMESTAMPTZ,
+            kp DOUBLE PRECISION, a_running DOUBLE PRECISION,
+            solar_wind_speed_km_s DOUBLE PRECISION, solar_wind_density DOUBLE PRECISION,
+            bz_nt DOUBLE PRECISION,
+            radio_blackout_scale SMALLINT, solar_radiation_scale SMALLINT,
+            geomagnetic_scale SMALLINT, retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (source, observed_at) DO UPDATE SET
+            kp = EXCLUDED.kp,
+            a_running = EXCLUDED.a_running,
+            solar_wind_speed_km_s = EXCLUDED.solar_wind_speed_km_s,
+            solar_wind_density = EXCLUDED.solar_wind_density,
+            bz_nt = EXCLUDED.bz_nt,
+            radio_blackout_scale = EXCLUDED.radio_blackout_scale,
+            solar_radiation_scale = EXCLUDED.solar_radiation_scale,
+            geomagnetic_scale = EXCLUDED.geomagnetic_scale,
+            retrieved_at = EXCLUDED.retrieved_at
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async latest(source) {
+      const rows = await sql<SpaceWeatherRow[]>`
+        SELECT * FROM space_weather WHERE source = ${source}
+        ORDER BY observed_at DESC LIMIT 1
+      `;
+      const row = rows[0];
+      return row === undefined ? undefined : toObservation(row);
+    },
+
+    async since(source, from) {
+      const rows = await sql<SpaceWeatherRow[]>`
+        SELECT * FROM space_weather
+        WHERE source = ${source} AND observed_at >= ${from}
+        ORDER BY observed_at ASC
+      `;
+      return rows.map(toObservation);
     },
   };
 }

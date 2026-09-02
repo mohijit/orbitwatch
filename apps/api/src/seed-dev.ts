@@ -4,7 +4,11 @@ import { resolve } from "node:path";
 import { createMemoryCache } from "@orbitwatch/cache";
 import { InMemoryDatabase } from "@orbitwatch/database";
 import { GuardedHttpClient, type GuardedFetchResult } from "@orbitwatch/providers";
-import { ingestOrbitalElements, ingestTransmitters } from "@orbitwatch/worker";
+import {
+  ingestOrbitalElements,
+  ingestSpaceWeather,
+  ingestTransmitters,
+} from "@orbitwatch/worker";
 
 import { buildServer } from "./server.js";
 
@@ -169,6 +173,46 @@ async function main(): Promise<void> {
     );
   }
 
+  // Fourth replay: space weather. Three captured NOAA products, routed by URL through
+  // the same ingestion the scheduler runs.
+  const noaaBodies: Record<string, string> = {
+    "noaa-planetary-k-index": readFileSync(
+      resolve(repoRoot, "fixtures", "noaa-planetary-k-index.json"),
+      "utf8",
+    ),
+    "propagated-solar-wind": readFileSync(
+      resolve(repoRoot, "fixtures", "noaa-propagated-solar-wind.json"),
+      "utf8",
+    ),
+    "noaa-scales": readFileSync(resolve(repoRoot, "fixtures", "noaa-scales.json"), "utf8"),
+  };
+
+  class NoaaFixtureClient extends GuardedHttpClient {
+    override get(url: string): Promise<GuardedFetchResult> {
+      const key = Object.keys(noaaBodies).find((name) => url.includes(name));
+      const body = key === undefined ? undefined : noaaBodies[key];
+      if (body === undefined) return Promise.reject(new Error(`No NOAA fixture for ${url}`));
+      return Promise.resolve({
+        status: "fetched",
+        body,
+        contentType: "application/json",
+        fetchedAt: FIXTURE_RETRIEVED_AT,
+      });
+    }
+  }
+
+  const weather = await ingestSpaceWeather({
+    database,
+    http: new NoaaFixtureClient(),
+    holder: "e2e-seed",
+  });
+
+  if (weather.status !== "success") {
+    console.warn(
+      `E2E seed space weather ingestion was ${weather.status}: ${weather.errorSummary ?? "no detail"}`,
+    );
+  }
+
   const app = await buildServer({
     database,
     cache: createMemoryCache(),
@@ -182,7 +226,8 @@ async function main(): Promise<void> {
     `Seeded E2E API listening on http://127.0.0.1:${String(PORT)} — ` +
       `${String(result.inserted)} objects from fixtures/${FIXTURE_FILE}, ` +
       `${String(visual.fetched)} visual-group members, ` +
-      `${String(radio.inserted)} transmitters`,
+      `${String(radio.inserted)} transmitters, ` +
+      `${String(weather.inserted)} space weather observations`,
   );
 }
 

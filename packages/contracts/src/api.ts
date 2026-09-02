@@ -342,6 +342,38 @@ export const radioTransmittersResponseSchema = z.object({
 export type RadioTransmitterDto = z.infer<typeof radioTransmitterSchema>;
 export type RadioTransmittersResponse = z.infer<typeof radioTransmittersResponseSchema>;
 
+// ── space weather ────────────────────────────────────────────────────────────────
+
+/**
+ * Current space weather, and why a tracker reports it.
+ *
+ * Elevated geomagnetic activity expands the thermosphere and raises drag in low orbit,
+ * so a propagated position drifts faster during a storm — the accuracy this product
+ * quotes for an ageing element set is optimistic exactly when conditions are worst.
+ * Every field is optional because NOAA's products fail independently, and a missing
+ * value must read as "not known" rather than as a calm reading.
+ */
+export const spaceWeatherResponseSchema = z.object({
+  /** Kp, 0-9, from the 3-hourly planetary index. */
+  kp: z.number().optional(),
+  kpObservedAt: isoTimestampSchema.optional(),
+  solarWindSpeedKmS: z.number().optional(),
+  bzNt: z.number().optional(),
+  solarWindObservedAt: isoTimestampSchema.optional(),
+  /** NOAA R/S/G scales, 0-5. */
+  radioBlackoutScale: z.number().int().min(0).max(5).optional(),
+  solarRadiationScale: z.number().int().min(0).max(5).optional(),
+  geomagneticScale: z.number().int().min(0).max(5).optional(),
+  scalesObservedAt: isoTimestampSchema.optional(),
+  /** Recent Kp, oldest first, for a sparkline. */
+  kpHistory: z.array(z.object({ observedAt: isoTimestampSchema, kp: z.number() })),
+  /** True when nothing has ever been ingested — distinct from calm conditions. */
+  unavailable: z.boolean(),
+  attribution: z.string(),
+});
+
+export type SpaceWeatherResponse = z.infer<typeof spaceWeatherResponseSchema>;
+
 // ── query parameters ─────────────────────────────────────────────────────────────
 
 /** Bounded so a client cannot request the entire catalog in one page by accident. */
