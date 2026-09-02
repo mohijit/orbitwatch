@@ -15,6 +15,8 @@ import type {
   SatelliteFilter,
   SatelliteRecord,
   SatelliteRepository,
+  LaunchRecord,
+  LaunchRepository,
   RadioRepository,
   RadioTransmitter,
   SatelliteGroupRepository,
@@ -218,6 +220,7 @@ export class PostgresDatabase implements Database {
   readonly groups: SatelliteGroupRepository;
   readonly radio: RadioRepository;
   readonly spaceWeather: SpaceWeatherRepository;
+  readonly launches: LaunchRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -232,6 +235,7 @@ export class PostgresDatabase implements Database {
     this.groups = createGroupRepository(sql);
     this.radio = createRadioRepository(sql);
     this.spaceWeather = createSpaceWeatherRepository(sql);
+    this.launches = createLaunchRepository(sql);
     this.providerRuns = createProviderRunRepository(sql);
     this.leases = createLeaseRepository(sql);
   }
@@ -1009,6 +1013,152 @@ function createSpaceWeatherRepository(sql: Sql): SpaceWeatherRepository {
         ORDER BY observed_at ASC
       `;
       return rows.map(toObservation);
+    },
+  };
+}
+
+interface LaunchRow {
+  id: string;
+  provider: string;
+  name: string;
+  net: Date;
+  net_precision: string | null;
+  window_start: Date | null;
+  window_end: Date | null;
+  status_name: string | null;
+  status_abbrev: string | null;
+  service_provider: string | null;
+  rocket_name: string | null;
+  mission_name: string | null;
+  mission_orbit: string | null;
+  pad_name: string | null;
+  pad_location: string | null;
+  pad_latitude: number | null;
+  pad_longitude: number | null;
+  webcast_live: boolean;
+  retrieved_at: Date;
+}
+
+function toLaunch(row: LaunchRow): LaunchRecord {
+  return {
+    id: row.id,
+    provider: row.provider,
+    name: row.name,
+    net: row.net,
+    netPrecision: row.net_precision ?? undefined,
+    windowStart: row.window_start ?? undefined,
+    windowEnd: row.window_end ?? undefined,
+    statusName: row.status_name ?? undefined,
+    statusAbbrev: row.status_abbrev ?? undefined,
+    serviceProvider: row.service_provider ?? undefined,
+    rocketName: row.rocket_name ?? undefined,
+    missionName: row.mission_name ?? undefined,
+    missionOrbit: row.mission_orbit ?? undefined,
+    padName: row.pad_name ?? undefined,
+    padLocation: row.pad_location ?? undefined,
+    padLatitude: row.pad_latitude ?? undefined,
+    padLongitude: row.pad_longitude ?? undefined,
+    webcastLive: row.webcast_live,
+    retrievedAt: row.retrieved_at,
+  };
+}
+
+function createLaunchRepository(sql: Sql): LaunchRepository {
+  return {
+    async upsertMany(launches) {
+      if (launches.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(launches, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((launch) => ({
+              id: launch.id,
+              provider: launch.provider,
+              name: launch.name,
+              net: launch.net.toISOString(),
+              net_precision: launch.netPrecision ?? null,
+              window_start: launch.windowStart?.toISOString() ?? null,
+              window_end: launch.windowEnd?.toISOString() ?? null,
+              status_name: launch.statusName ?? null,
+              status_abbrev: launch.statusAbbrev ?? null,
+              service_provider: launch.serviceProvider ?? null,
+              rocket_name: launch.rocketName ?? null,
+              mission_name: launch.missionName ?? null,
+              mission_orbit: launch.missionOrbit ?? null,
+              pad_name: launch.padName ?? null,
+              pad_location: launch.padLocation ?? null,
+              pad_latitude: launch.padLatitude ?? null,
+              pad_longitude: launch.padLongitude ?? null,
+              webcast_live: launch.webcastLive,
+              retrieved_at: launch.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        // xmax = 0 tells an insert from an update in one round trip, the same idiom
+        // every other bulk write here uses. A slipped NET is an update, not a new row.
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO launches (
+            id, provider, name, net, net_precision, window_start, window_end,
+            status_name, status_abbrev, service_provider, rocket_name,
+            mission_name, mission_orbit, pad_name, pad_location,
+            pad_latitude, pad_longitude, webcast_live, retrieved_at,
+            first_seen_at, last_seen_at
+          )
+          SELECT
+            i.id, i.provider, i.name, i.net, i.net_precision, i.window_start, i.window_end,
+            i.status_name, i.status_abbrev, i.service_provider, i.rocket_name,
+            i.mission_name, i.mission_orbit, i.pad_name, i.pad_location,
+            i.pad_latitude, i.pad_longitude, i.webcast_live, i.retrieved_at,
+            now(), now()
+          FROM json_to_recordset(${payload}::json) AS i(
+            id TEXT, provider TEXT, name TEXT, net TIMESTAMPTZ, net_precision TEXT,
+            window_start TIMESTAMPTZ, window_end TIMESTAMPTZ,
+            status_name TEXT, status_abbrev TEXT, service_provider TEXT,
+            rocket_name TEXT, mission_name TEXT, mission_orbit TEXT,
+            pad_name TEXT, pad_location TEXT,
+            pad_latitude DOUBLE PRECISION, pad_longitude DOUBLE PRECISION,
+            webcast_live BOOLEAN, retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            net = EXCLUDED.net,
+            net_precision = EXCLUDED.net_precision,
+            window_start = EXCLUDED.window_start,
+            window_end = EXCLUDED.window_end,
+            status_name = EXCLUDED.status_name,
+            status_abbrev = EXCLUDED.status_abbrev,
+            service_provider = EXCLUDED.service_provider,
+            rocket_name = EXCLUDED.rocket_name,
+            mission_name = EXCLUDED.mission_name,
+            mission_orbit = EXCLUDED.mission_orbit,
+            pad_name = EXCLUDED.pad_name,
+            pad_location = EXCLUDED.pad_location,
+            pad_latitude = EXCLUDED.pad_latitude,
+            pad_longitude = EXCLUDED.pad_longitude,
+            webcast_live = EXCLUDED.webcast_live,
+            retrieved_at = EXCLUDED.retrieved_at,
+            last_seen_at = now()
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async upcoming(from, limit) {
+      const rows = await sql<LaunchRow[]>`
+        SELECT * FROM launches WHERE net >= ${from} ORDER BY net ASC LIMIT ${limit}
+      `;
+      return rows.map(toLaunch);
     },
   };
 }

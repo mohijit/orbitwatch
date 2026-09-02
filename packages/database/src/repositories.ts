@@ -381,12 +381,58 @@ export interface SpaceWeatherRepository {
   ): Promise<readonly SpaceWeatherObservation[]>;
 }
 
+/**
+ * A scheduled launch.
+ *
+ * `netPrecision` travels with `net` deliberately. Launch Library publishes a full ISO
+ * timestamp even for a launch known only to the month, so the time alone is not a
+ * usable fact — anything rendering it has to know how much of it to believe.
+ */
+export interface LaunchRecord {
+  readonly id: string;
+  readonly provider: string;
+  readonly name: string;
+  readonly net: Date;
+  readonly netPrecision: string | undefined;
+  readonly windowStart: Date | undefined;
+  readonly windowEnd: Date | undefined;
+  readonly statusName: string | undefined;
+  readonly statusAbbrev: string | undefined;
+  readonly serviceProvider: string | undefined;
+  readonly rocketName: string | undefined;
+  readonly missionName: string | undefined;
+  readonly missionOrbit: string | undefined;
+  readonly padName: string | undefined;
+  readonly padLocation: string | undefined;
+  readonly padLatitude: number | undefined;
+  readonly padLongitude: number | undefined;
+  readonly webcastLive: boolean;
+  readonly retrievedAt: Date;
+}
+
+export interface LaunchRepository {
+  /** Insert or update, keyed on the provider's id. A slipped NET is an update. */
+  upsertMany(
+    launches: readonly LaunchRecord[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /**
+   * Launches at or after `from`, soonest first.
+   *
+   * Filtered by time rather than by status: a launch that has slipped into the past
+   * without its status being updated is stale information, and showing it would be
+   * worse than showing nothing.
+   */
+  upcoming(from: Date, limit: number): Promise<readonly LaunchRecord[]>;
+}
+
 export interface Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
   readonly groups: SatelliteGroupRepository;
   readonly radio: RadioRepository;
   readonly spaceWeather: SpaceWeatherRepository;
+  readonly launches: LaunchRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
   /** Run migrations. Safe to call repeatedly; already-applied ones are skipped. */

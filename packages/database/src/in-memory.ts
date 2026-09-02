@@ -4,6 +4,8 @@ import type {
   Database,
   ElementQuery,
   IngestionLeaseRepository,
+  LaunchRecord,
+  LaunchRepository,
   OrbitalElementRecord,
   OrbitalElementRepository,
   ProviderRunRecord,
@@ -40,6 +42,7 @@ export class InMemoryDatabase implements Database {
   readonly groups: SatelliteGroupRepository;
   readonly radio: RadioRepository;
   readonly spaceWeather: SpaceWeatherRepository;
+  readonly launches: LaunchRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -51,6 +54,7 @@ export class InMemoryDatabase implements Database {
   readonly #groups = new Map<string, SatelliteGroupMembership>();
   readonly #transmitters = new Map<string, RadioTransmitter>();
   readonly #spaceWeather = new Map<string, SpaceWeatherObservation>();
+  readonly #launches = new Map<string, LaunchRecord>();
   #nextId = 1;
   readonly #now: () => Date;
 
@@ -61,6 +65,7 @@ export class InMemoryDatabase implements Database {
     this.groups = this.#createGroupRepository();
     this.radio = this.#createRadioRepository();
     this.spaceWeather = this.#createSpaceWeatherRepository();
+    this.launches = this.#createLaunchRepository();
     this.providerRuns = this.#createProviderRunRepository();
     this.leases = this.#createLeaseRepository();
   }
@@ -476,6 +481,32 @@ export class InMemoryDatabase implements Database {
               observation.observedAt.getTime() >= from.getTime(),
           )
           .sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime()),
+    };
+  }
+
+  #createLaunchRepository(): LaunchRepository {
+    const launches = this.#launches;
+
+    return {
+      upsertMany: async (incoming) => {
+        let inserted = 0;
+        let updated = 0;
+        for (const launch of incoming) {
+          if (launches.has(launch.id)) updated += 1;
+          else inserted += 1;
+          launches.set(launch.id, launch);
+        }
+        return { inserted, updated };
+      },
+
+      // Filtered by time rather than status: a launch that slipped into the past
+      // without its status being updated is stale, and showing it is worse than
+      // showing nothing.
+      upcoming: async (from, limit) =>
+        [...launches.values()]
+          .filter((launch) => launch.net.getTime() >= from.getTime())
+          .sort((a, b) => a.net.getTime() - b.net.getTime())
+          .slice(0, limit),
     };
   }
 

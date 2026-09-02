@@ -992,6 +992,116 @@ export function runDatabaseContractTests(
       });
     });
 
+    // ── launches ─────────────────────────────────────────────────────────────
+
+    describe("launches", () => {
+      const launch = (id: string, hoursFromNow: number, overrides: Record<string, unknown> = {}) => ({
+        id,
+        provider: "launch-library",
+        name: "Electron | Owl Around The World",
+        net: at(hoursFromNow),
+        netPrecision: "Minute",
+        windowStart: at(hoursFromNow),
+        windowEnd: at(hoursFromNow + 2),
+        statusName: "Go for Launch",
+        statusAbbrev: "Go",
+        serviceProvider: "Rocket Lab",
+        rocketName: "Electron",
+        missionName: "StriX Launch 11",
+        missionOrbit: "Low Earth Orbit",
+        padName: "Launch Complex 1",
+        padLocation: "Mahia Peninsula, New Zealand",
+        padLatitude: -39.2611,
+        padLongitude: 177.8649,
+        webcastLive: false,
+        retrievedAt: at(0),
+        ...overrides,
+      });
+
+      it("stores a launch and returns it as upcoming", async () => {
+        expect(await db.launches.upsertMany([launch("a", 6)])).toEqual({
+          inserted: 1,
+          updated: 0,
+        });
+
+        const upcoming = await db.launches.upcoming(at(0), 10);
+        expect(upcoming).toHaveLength(1);
+        expect(upcoming[0]?.name).toBe("Electron | Owl Around The World");
+        expect(upcoming[0]?.rocketName).toBe("Electron");
+        expect(upcoming[0]?.padLatitude).toBeCloseTo(-39.2611, 4);
+      });
+
+      it("keeps how precise the launch time actually is", async () => {
+        // Launch Library sends a full ISO timestamp even for a launch known only to
+        // the month. Without the precision beside it, the UI would render a
+        // to-the-minute T-0 for something that might slip four weeks.
+        await db.launches.upsertMany([
+          launch("precise", 6),
+          launch("vague", 800, { netPrecision: "Month" }),
+          launch("unstated", 900, { netPrecision: undefined }),
+        ]);
+
+        const upcoming = await db.launches.upcoming(at(0), 10);
+        const byId = new Map(upcoming.map((one) => [one.id, one]));
+        expect(byId.get("precise")?.netPrecision).toBe("Minute");
+        expect(byId.get("vague")?.netPrecision).toBe("Month");
+        // Not stated is not the same as precise, and must not default to one.
+        expect(byId.get("unstated")?.netPrecision).toBeUndefined();
+      });
+
+      it("treats a slipped launch as an update, not a new row", async () => {
+        // Launches slip constantly and are republished under the same id.
+        await db.launches.upsertMany([launch("a", 6)]);
+        expect(
+          await db.launches.upsertMany([
+            launch("a", 30, { statusName: "To Be Determined", statusAbbrev: "TBD" }),
+          ]),
+        ).toEqual({ inserted: 0, updated: 1 });
+
+        const upcoming = await db.launches.upcoming(at(0), 10);
+        expect(upcoming).toHaveLength(1);
+        expect(upcoming[0]?.net.toISOString()).toBe(at(30).toISOString());
+        expect(upcoming[0]?.statusName).toBe("To Be Determined");
+      });
+
+      it("excludes launches whose time has passed", async () => {
+        // Filtered on time rather than status: a launch that slipped into the past
+        // without its status being updated is stale, and showing it is worse than
+        // showing nothing.
+        await db.launches.upsertMany([launch("past", -3), launch("future", 3)]);
+        expect((await db.launches.upcoming(at(0), 10)).map((one) => one.id)).toEqual([
+          "future",
+        ]);
+      });
+
+      it("returns the soonest first and honours the limit", async () => {
+        await db.launches.upsertMany([
+          launch("third", 72),
+          launch("first", 2),
+          launch("second", 24),
+        ]);
+
+        expect((await db.launches.upcoming(at(0), 2)).map((one) => one.id)).toEqual([
+          "first",
+          "second",
+        ]);
+      });
+
+      it("stores a pad with no coordinates rather than dropping the launch", async () => {
+        // Plenty of pads have no usable position. The launch is still real.
+        await db.launches.upsertMany([
+          launch("a", 6, { padLatitude: undefined, padLongitude: undefined }),
+        ]);
+        const [stored] = await db.launches.upcoming(at(0), 10);
+        expect(stored?.padLatitude).toBeUndefined();
+        expect(stored?.padName).toBe("Launch Complex 1");
+      });
+
+      it("treats an empty batch as a no-op", async () => {
+        expect(await db.launches.upsertMany([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
     // ── liveness ─────────────────────────────────────────────────────────────
 
     it("reports a non-negative ping latency", async () => {

@@ -650,3 +650,15 @@ html, body {
 .space-weather__meaning { margin: 0.3rem 0 0; font-size: 0.68rem; line-height: 1.45; color: var(--ow-text-muted); }
 .space-weather__note { margin: 0.2rem 0 0; font-size: 0.68rem; line-height: 1.45; color: #f4a548; }
 .space-weather__attribution { margin: 0.3rem 0 0; font-size: 0.6rem; line-height: 1.4; color: var(--ow-text-muted); }
+
+.launches { margin-bottom: 0.75rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--ow-border); }
+.launches__note { margin: 0.2rem 0 0; font-size: 0.68rem; color: var(--ow-text-muted); }
+.launches__list { list-style: none; margin: 0; padding: 0; }
+.launches__item { display: grid; gap: 0.05rem; padding: 0.3rem 0; border-bottom: 1px solid var(--ow-border); font-size: 0.7rem; }
+.launches__item:last-child { border-bottom: none; }
+.launches__when { color: var(--ow-accent); font-family: ui-monospace, monospace; font-size: 0.68rem; }
+/* A stated imprecision must not look like part of the time. */
+.launches__qualifier { color: var(--ow-text-muted); font-style: italic; }
+.launches__name { color: var(--ow-text); }
+.launches__detail { color: var(--ow-text-muted); font-size: 0.63rem; }
+.launches__attribution { margin: 0.3rem 0 0; font-size: 0.6rem; color: var(--ow-text-muted); }

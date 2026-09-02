@@ -1,12 +1,14 @@
 import {
   catalogGroupResponseSchema,
   radioTransmittersResponseSchema,
+  launchesResponseSchema,
   spaceWeatherResponseSchema,
   elementsResponseSchema,
   satelliteListResponseSchema,
   type CatalogGroupResponse,
   type ElementsResponse,
   type RadioTransmittersResponse,
+  type LaunchesResponse,
   type SpaceWeatherResponse,
   type SatelliteListResponse,
 } from "@orbitwatch/contracts";
@@ -122,4 +124,17 @@ export async function fetchTransmitters(
  */
 export async function fetchSpaceWeather(): Promise<SpaceWeatherResponse> {
   return spaceWeatherResponseSchema.parse(await getJson("/space-weather"));
+}
+
+/**
+ * The next launches.
+ *
+ * Served with each launch's time precision, which the caller is obliged to consult:
+ * a T-0 known only to the month arrives as a full timestamp and must not be rendered
+ * as one.
+ */
+export async function fetchUpcomingLaunches(limit = 6): Promise<LaunchesResponse> {
+  return launchesResponseSchema.parse(
+    await getJson("/launches/upcoming", { limit: String(limit) }),
+  );
 }

@@ -8,6 +8,7 @@ import { ZodError } from "zod";
 
 import { safeDetail } from "./redact.js";
 import { registerHealthRoutes } from "./routes/health.js";
+import { registerLaunchRoutes } from "./routes/launches.js";
 import { registerProviderRoutes } from "./routes/providers.js";
 import { registerSatelliteRoutes } from "./routes/satellites.js";
 import { registerSpaceWeatherRoutes } from "./routes/space-weather.js";
@@ -191,6 +192,7 @@ export async function buildServer(
   await registerProviderRoutes(app, context);
   await registerSatelliteRoutes(app, context);
   registerSpaceWeatherRoutes(app, context);
+  registerLaunchRoutes(app, context);
 
   return app;
 }

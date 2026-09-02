@@ -5,6 +5,7 @@ import { createMemoryCache } from "@orbitwatch/cache";
 import { InMemoryDatabase } from "@orbitwatch/database";
 import { GuardedHttpClient, type GuardedFetchResult } from "@orbitwatch/providers";
 import {
+  ingestLaunches,
   ingestOrbitalElements,
   ingestSpaceWeather,
   ingestTransmitters,
@@ -85,6 +86,15 @@ function fixtureRetrievedAt(): Date {
 }
 
 const FIXTURE_RETRIEVED_AT = fixtureRetrievedAt();
+
+/**
+ * The instant the seeded API answers "now" with.
+ *
+ * Just before the earliest launch in the captured Launch Library page, so the upcoming
+ * list is genuinely upcoming. Nothing else in the seed depends on it: element epochs
+ * and retrieval times come from the fixtures themselves.
+ */
+const SEED_CLOCK = new Date("2026-09-01T00:00:00.000Z");
 
 /**
  * Replays captured provider bytes instead of making a request.
@@ -213,10 +223,39 @@ async function main(): Promise<void> {
     );
   }
 
+  // Fifth replay: upcoming launches, from the captured detailed LL2 page.
+  const launchBody = readFileSync(
+    resolve(repoRoot, "fixtures", "launch-library-upcoming-detailed.json"),
+    "utf8",
+  );
+  const launches = await ingestLaunches({
+    database,
+    http: new FixtureHttpClient(launchBody),
+    holder: "e2e-seed",
+  });
+
+  if (launches.status !== "success") {
+    console.warn(
+      `E2E seed launch ingestion was ${launches.status}: ${launches.errorSummary ?? "no detail"}`,
+    );
+  }
+
   const app = await buildServer({
     database,
     cache: createMemoryCache(),
     version: "e2e-seed",
+    /*
+     * The server's clock is pinned to the fixture era, for the same reason the
+     * browser's is.
+     *
+     * "Upcoming launches" is answered relative to the SERVER's now. The captured LL2
+     * page is from 2026-09-01 and its earliest launch is at 02:00Z that day, so against
+     * a real clock every launch in it has already happened: the endpoint correctly
+     * returns nothing, and a test would assert an empty list forever while never
+     * exercising the rendering it exists to check. Pinned just before that launch, so
+     * "upcoming" means what it says.
+     */
+    now: () => SEED_CLOCK,
     corsOrigins: ["http://127.0.0.1:3100", "http://localhost:3100"],
     rateLimitPerMinute: 10_000,
   });
@@ -227,7 +266,8 @@ async function main(): Promise<void> {
       `${String(result.inserted)} objects from fixtures/${FIXTURE_FILE}, ` +
       `${String(visual.fetched)} visual-group members, ` +
       `${String(radio.inserted)} transmitters, ` +
-      `${String(weather.inserted)} space weather observations`,
+      `${String(weather.inserted)} space weather observations, ` +
+      `${String(launches.inserted)} launches`,
   );
 }
 

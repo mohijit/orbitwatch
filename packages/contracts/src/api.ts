@@ -374,6 +374,45 @@ export const spaceWeatherResponseSchema = z.object({
 
 export type SpaceWeatherResponse = z.infer<typeof spaceWeatherResponseSchema>;
 
+// ── launches ─────────────────────────────────────────────────────────────────────
+
+/**
+ * A scheduled launch.
+ *
+ * `netPrecision` is served beside `net` and is the field that matters. Launch Library
+ * publishes a full ISO timestamp even for a launch known only to the month, so the
+ * timestamp alone is not a usable fact — a client rendering it without the precision
+ * shows a to-the-minute T-0 for something that may slip four weeks. Absent means the
+ * provider did not state it, which is "unknown", not "exact".
+ */
+export const launchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  net: isoTimestampSchema,
+  netPrecision: z.string().optional(),
+  windowStart: isoTimestampSchema.optional(),
+  windowEnd: isoTimestampSchema.optional(),
+  status: z.string().optional(),
+  serviceProvider: z.string().optional(),
+  rocket: z.string().optional(),
+  mission: z.string().optional(),
+  orbit: z.string().optional(),
+  pad: z.string().optional(),
+  padLocation: z.string().optional(),
+  padLatitude: z.number().min(-90).max(90).optional(),
+  padLongitude: z.number().min(-180).max(180).optional(),
+  webcastLive: z.boolean(),
+});
+
+export const launchesResponseSchema = z.object({
+  count: z.number().int().nonnegative(),
+  launches: z.array(launchSchema),
+  attribution: z.string(),
+});
+
+export type Launch = z.infer<typeof launchSchema>;
+export type LaunchesResponse = z.infer<typeof launchesResponseSchema>;
+
 // ── query parameters ─────────────────────────────────────────────────────────────
 
 /** Bounded so a client cannot request the entire catalog in one page by accident. */
