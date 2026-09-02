@@ -6,6 +6,7 @@ import {
   providerStatusResponseSchema,
   satelliteListResponseSchema,
   catalogElementsResponseSchema,
+  radioTransmittersResponseSchema,
   catalogGroupResponseSchema,
 } from "@orbitwatch/contracts";
 import { InMemoryDatabase } from "@orbitwatch/database";
@@ -545,6 +546,104 @@ describe("OrbitWatch API", () => {
   });
 
   // ── providers ────────────────────────────────────────────────────────────
+
+  describe("radio transmitters", () => {
+    // The endpoint distinguishes "no such satellite" from "this satellite publishes no
+    // radio", so the object has to exist for every case except the 404 test.
+    beforeEach(async () => {
+      await database.satellites.upsertMany([SATELLITE]);
+    });
+
+    const transmitter = (uuid: string, overrides: Record<string, unknown> = {}) => ({
+      uuid,
+      provider: "satnogs-db",
+      catalogId: "25544",
+      satId: "XSKZ-5603-1870-9019-3066",
+      description: "Mode V APRS",
+      type: "Transceiver",
+      status: "active",
+      alive: true,
+      uplinkLowHz: 145_825_000,
+      uplinkHighHz: undefined,
+      downlinkLowHz: 145_825_000,
+      downlinkHighHz: undefined,
+      mode: "AFSK",
+      uplinkMode: "AFSK",
+      baud: 1200,
+      inverted: false,
+      service: "Amateur",
+      citation: "https://example.invalid/citation",
+      updatedAt: new Date("2019-06-16T08:49:33.586Z"),
+      retrievedAt: new Date("2026-08-31T12:00:00.000Z"),
+      ...overrides,
+    });
+
+    it("serves what an object transmits, in hertz", async () => {
+      await database.radio.upsertMany([transmitter("a")]);
+
+      const body = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters" })).json(),
+      );
+
+      expect(body.count).toBe(1);
+      expect(body.transmitters[0]?.downlinkLowHz).toBe(145_825_000);
+      // Hertz all the way to the client. Converting to MHz in transport would bury a
+      // factor of a million in the one place it is hardest to notice.
+      expect(body.transmitters[0]?.mode).toBe("AFSK");
+    });
+
+    it("ships the licence attribution with the data", async () => {
+      await database.radio.upsertMany([transmitter("a")]);
+      const body = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters" })).json(),
+      );
+
+      // SatNOGS is CC BY-SA 4.0. A client rendering these frequencies is obliged to
+      // credit the source, and sending the text alongside makes that hard to omit.
+      expect(body.attribution).toContain("SatNOGS");
+      expect(body.provider).toBe("satnogs-db");
+    });
+
+    it("hides dead transmitters unless asked", async () => {
+      await database.radio.upsertMany([
+        transmitter("alive-one"),
+        transmitter("dead-one", { alive: false, status: "inactive" }),
+      ]);
+
+      const live = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters" })).json(),
+      );
+      expect(live.count).toBe(1);
+
+      const all = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters?includeDead=true" })).json(),
+      );
+      expect(all.count).toBe(2);
+    });
+
+    it("returns an empty list, not a 404, for an object with no radio", async () => {
+      // "This satellite publishes no transmitters" is an answer, and a different one
+      // from "no such satellite". Collapsing them would make a real gap look like a bug.
+      const response = await app.inject({ url: "/satellites/25544/transmitters" });
+      expect(response.statusCode).toBe(200);
+      expect(radioTransmittersResponseSchema.parse(response.json()).count).toBe(0);
+    });
+
+    it("404s for a satellite that does not exist", async () => {
+      const response = await app.inject({ url: "/satellites/99999/transmitters" });
+      expect(response.statusCode).toBe(404);
+    });
+
+    it("keeps the provider's update time and the retrieval time apart", async () => {
+      await database.radio.upsertMany([transmitter("a")]);
+      const body = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters" })).json(),
+      );
+
+      expect(body.transmitters[0]?.updatedAt).toBe("2019-06-16T08:49:33.586Z");
+      expect(body.transmitters[0]?.retrievedAt).toBe("2026-08-31T12:00:00.000Z");
+    });
+  });
 
   describe("provider status", () => {
     it("reports never-succeeded before any ingestion has run", async () => {

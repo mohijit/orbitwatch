@@ -9,6 +9,8 @@ import type {
   ProviderRunRecord,
   ProviderRunRepository,
   ProviderRunStatus,
+  RadioRepository,
+  RadioTransmitter,
   SatelliteFilter,
   SatelliteRecord,
   SatelliteRepository,
@@ -34,6 +36,7 @@ export class InMemoryDatabase implements Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
   readonly groups: SatelliteGroupRepository;
+  readonly radio: RadioRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -43,6 +46,7 @@ export class InMemoryDatabase implements Database {
   readonly #leases = new Map<string, { holder: string; expiresAt: Date }>();
   /** Keyed `provider|group|catalogId`; none of the three can contain a pipe. */
   readonly #groups = new Map<string, SatelliteGroupMembership>();
+  readonly #transmitters = new Map<string, RadioTransmitter>();
   #nextId = 1;
   readonly #now: () => Date;
 
@@ -51,6 +55,7 @@ export class InMemoryDatabase implements Database {
     this.satellites = this.#createSatelliteRepository();
     this.elements = this.#createElementRepository();
     this.groups = this.#createGroupRepository();
+    this.radio = this.#createRadioRepository();
     this.providerRuns = this.#createProviderRunRepository();
     this.leases = this.#createLeaseRepository();
   }
@@ -387,6 +392,52 @@ export class InMemoryDatabase implements Database {
           )
           .sort((a, b) => (a.catalogId < b.catalogId ? -1 : a.catalogId > b.catalogId ? 1 : 0));
       },
+    };
+  }
+
+  #createRadioRepository(): RadioRepository {
+    const transmitters = this.#transmitters;
+    const now = this.#now;
+
+    return {
+      upsertMany: async (incoming) => {
+        let inserted = 0;
+        let updated = 0;
+        for (const transmitter of incoming) {
+          const existing = transmitters.get(transmitter.uuid);
+          if (existing === undefined) {
+            transmitters.set(transmitter.uuid, {
+              ...transmitter,
+              firstSeenAt: now(),
+              lastSeenAt: now(),
+            });
+            inserted += 1;
+          } else {
+            // firstSeenAt is never moved forward: it records when we first saw this
+            // transmitter, which a later refresh does not change.
+            transmitters.set(transmitter.uuid, {
+              ...transmitter,
+              firstSeenAt: existing.firstSeenAt,
+              lastSeenAt: now(),
+            });
+            updated += 1;
+          }
+        }
+        return { inserted, updated };
+      },
+
+      forSatellite: async (catalogId, options = {}) =>
+        [...transmitters.values()]
+          .filter(
+            (transmitter) =>
+              transmitter.catalogId === catalogId &&
+              (options.includeDead === true || transmitter.alive),
+          )
+          // Downlink ascending: a user scanning the list is looking for a band, and an
+          // arbitrary order makes them read every row.
+          .sort((a, b) => (a.downlinkLowHz ?? 0) - (b.downlinkLowHz ?? 0)),
+
+      count: async () => transmitters.size,
     };
   }
 

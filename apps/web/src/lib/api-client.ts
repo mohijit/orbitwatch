@@ -1,9 +1,11 @@
 import {
   catalogGroupResponseSchema,
+  radioTransmittersResponseSchema,
   elementsResponseSchema,
   satelliteListResponseSchema,
   type CatalogGroupResponse,
   type ElementsResponse,
+  type RadioTransmittersResponse,
   type SatelliteListResponse,
 } from "@orbitwatch/contracts";
 
@@ -92,5 +94,20 @@ export async function fetchElements(
       `/satellites/${encodeURIComponent(catalogId)}/elements`,
       at ? { at: at.toISOString() } : undefined,
     ),
+  );
+}
+
+/**
+ * What an object transmits, from the SatNOGS DB.
+ *
+ * A separate request rather than part of the element response: radio comes from a
+ * different provider with a different refresh cadence and a different licence, and
+ * folding it into the elements would imply one source vouches for the other.
+ */
+export async function fetchTransmitters(
+  catalogId: string,
+): Promise<RadioTransmittersResponse> {
+  return radioTransmittersResponseSchema.parse(
+    await getJson(`/satellites/${encodeURIComponent(catalogId)}/transmitters`),
   );
 }

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { createMemoryCache } from "@orbitwatch/cache";
 import { InMemoryDatabase } from "@orbitwatch/database";
 import { GuardedHttpClient, type GuardedFetchResult } from "@orbitwatch/providers";
-import { ingestOrbitalElements } from "@orbitwatch/worker";
+import { ingestOrbitalElements, ingestTransmitters } from "@orbitwatch/worker";
 
 import { buildServer } from "./server.js";
 
@@ -48,6 +48,16 @@ const FIXTURE_FILE = "celestrak-gp-e2e-subset.json";
  * has nothing to search.
  */
 const VISUAL_FIXTURE_FILE = "celestrak-gp-e2e-visual.json";
+
+/**
+ * A real SatNOGS DB response: 50 transmitters for the ISS, captured in M0.
+ *
+ * Replayed through the same ingestion the scheduled worker runs, so the E2E suite
+ * exercises schema validation, normalisation and the upsert rather than hand-built
+ * rows. Radio is a separate provider with its own licence and cadence, and the seed
+ * treats it as one.
+ */
+const TRANSMITTERS_FIXTURE_FILE = "satnogs-transmitters-iss.json";
 
 /**
  * The moment the fixture's records were actually retrieved from CelesTrak.
@@ -139,6 +149,26 @@ async function main(): Promise<void> {
     );
   }
 
+  // Third replay: radio. Failure here is reported but not fatal — the catalog and the
+  // observer features do not depend on it, and a suite that cannot start because one
+  // optional provider's fixture drifted would hide the failures that matter.
+  const transmitterBody = readFileSync(
+    resolve(repoRoot, "fixtures", TRANSMITTERS_FIXTURE_FILE),
+    "utf8",
+  );
+  const radio = await ingestTransmitters({
+    database,
+    http: new FixtureHttpClient(transmitterBody),
+    catalogId: "25544",
+    holder: "e2e-seed",
+  });
+
+  if (radio.status !== "success") {
+    console.warn(
+      `E2E seed transmitter ingestion was ${radio.status}: ${radio.errorSummary ?? "no detail"}`,
+    );
+  }
+
   const app = await buildServer({
     database,
     cache: createMemoryCache(),
@@ -151,7 +181,8 @@ async function main(): Promise<void> {
   console.log(
     `Seeded E2E API listening on http://127.0.0.1:${String(PORT)} — ` +
       `${String(result.inserted)} objects from fixtures/${FIXTURE_FILE}, ` +
-      `${String(visual.fetched)} visual-group members`,
+      `${String(visual.fetched)} visual-group members, ` +
+      `${String(radio.inserted)} transmitters`,
   );
 }
 

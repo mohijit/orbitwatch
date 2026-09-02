@@ -70,7 +70,7 @@ export interface IngestionLogger {
   error(message: string, fields?: Record<string, unknown>): void;
 }
 
-const NULL_LOGGER: IngestionLogger = {
+export const NULL_LOGGER: IngestionLogger = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
@@ -80,7 +80,7 @@ const NULL_LOGGER: IngestionLogger = {
  * A full catalog download can legitimately take a while. The lease must outlive it,
  * but not by so much that a crashed worker blocks the next scheduled run.
  */
-const DEFAULT_LEASE_TTL_SECONDS = 600;
+export const DEFAULT_LEASE_TTL_SECONDS = 600;
 
 /** How many rejected records to keep in the error summary before truncating. */
 const MAX_REPORTED_REJECTIONS = 5;
@@ -454,7 +454,7 @@ function skipped(
   };
 }
 
-function defaultHolder(): string {
+export function defaultHolder(): string {
   return `worker-${process.pid}`;
 }
 

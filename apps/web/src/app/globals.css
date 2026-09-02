@@ -612,3 +612,29 @@ html, body {
   }
   .shell__skip { transition: none; }
 }
+
+.radio-panel { margin-top: 0.35rem; }
+.radio-panel__note { margin: 0; font-size: 0.72rem; color: var(--ow-text-muted); line-height: 1.4; }
+.radio-panel__note--error { color: #f4a548; }
+.radio-panel__list { list-style: none; margin: 0; padding: 0; max-height: 11rem; overflow-y: auto; }
+.radio-panel__item {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--ow-border);
+  font-size: 0.72rem;
+}
+.radio-panel__item:last-child { border-bottom: none; }
+.radio-panel__description { color: var(--ow-text); }
+/* Monospace so the digits line up: these are read as a column and typed into a radio. */
+.radio-panel__frequencies {
+  display: flex;
+  gap: 0.7rem;
+  font-family: ui-monospace, monospace;
+  color: var(--ow-accent);
+}
+.radio-panel__uplink { color: var(--ow-text-muted); }
+.radio-panel__mode { color: var(--ow-text-muted); font-size: 0.65rem; }
+.radio-panel__attribution { margin: 0.4rem 0 0; font-size: 0.6rem; line-height: 1.4; color: var(--ow-text-muted); }
+
+.shell__badge--error { color: #f4a548; }

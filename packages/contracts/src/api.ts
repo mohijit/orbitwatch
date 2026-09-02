@@ -293,6 +293,55 @@ export const catalogGroupResponseSchema = z.object({
 
 export type CatalogGroupResponse = z.infer<typeof catalogGroupResponseSchema>;
 
+// ── radio ────────────────────────────────────────────────────────────────────────
+
+/**
+ * A transmitter as served to a client.
+ *
+ * Frequencies stay in HERTZ across the wire. Formatting to MHz is a presentation
+ * decision and belongs where the units can be labelled; converting here would put a
+ * factor of a million into the transport, which is exactly where such a mistake is
+ * hardest to see.
+ */
+export const radioTransmitterSchema = z.object({
+  uuid: z.string(),
+  description: z.string(),
+  type: z.string().optional(),
+  status: z.string(),
+  alive: z.boolean(),
+  uplinkLowHz: z.number().optional(),
+  uplinkHighHz: z.number().optional(),
+  downlinkLowHz: z.number().optional(),
+  downlinkHighHz: z.number().optional(),
+  mode: z.string().optional(),
+  uplinkMode: z.string().optional(),
+  baud: z.number().optional(),
+  inverted: z.boolean().optional(),
+  service: z.string().optional(),
+  citation: z.string().optional(),
+  /** When the PROVIDER last changed it — not when OrbitWatch fetched it. */
+  updatedAt: isoTimestampSchema.optional(),
+  retrievedAt: isoTimestampSchema,
+});
+
+export const radioTransmittersResponseSchema = z.object({
+  catalogId: z.string(),
+  provider: z.string(),
+  count: z.number().int().nonnegative(),
+  transmitters: z.array(radioTransmitterSchema),
+  /**
+   * Attribution is part of the response, not a footnote someone might forget.
+   *
+   * SatNOGS data is CC BY-SA 4.0. A client that renders these frequencies is obliged
+   * to credit the source, and shipping the text with the data is what makes that hard
+   * to omit by accident.
+   */
+  attribution: z.string(),
+});
+
+export type RadioTransmitterDto = z.infer<typeof radioTransmitterSchema>;
+export type RadioTransmittersResponse = z.infer<typeof radioTransmittersResponseSchema>;
+
 // ── query parameters ─────────────────────────────────────────────────────────────
 
 /** Bounded so a client cannot request the entire catalog in one page by accident. */

@@ -1,3 +1,5 @@
+import type { CatalogId } from "@orbitwatch/orbit-core";
+
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Database, OrbitalElementRecord, SatelliteRecord } from "./repositories.js";
@@ -774,6 +776,132 @@ export function runDatabaseContractTests(
           added: 0,
           refreshed: 0,
         });
+      });
+    });
+
+// ── radio transmitters ───────────────────────────────────────────────────
+
+    describe("radio transmitters", () => {
+      const transmitter = (
+        uuid: string,
+        overrides: Partial<Parameters<typeof db.radio.upsertMany>[0][number]> = {},
+      ) => ({
+        uuid,
+        provider: "satnogs-db",
+        catalogId: "25544",
+        satId: "XSKZ-5603-1870-9019-3066",
+        description: "Mode V APRS",
+        type: "Transceiver",
+        status: "active",
+        alive: true,
+        uplinkLowHz: 145_825_000,
+        uplinkHighHz: undefined,
+        downlinkLowHz: 145_825_000,
+        downlinkHighHz: undefined,
+        mode: "AFSK",
+        uplinkMode: "AFSK",
+        baud: 1200,
+        inverted: false,
+        service: "Amateur",
+        citation: "https://example.invalid/citation",
+        updatedAt: at(-48),
+        retrievedAt: at(-1),
+        ...overrides,
+      });
+
+      it("stores and returns a transmitter for its satellite", async () => {
+        expect(await db.radio.upsertMany([transmitter("a")])).toEqual({
+          inserted: 1,
+          updated: 0,
+        });
+
+        const found = await db.radio.forSatellite("25544" as CatalogId);
+        expect(found).toHaveLength(1);
+        expect(found[0]?.uuid).toBe("a");
+        expect(found[0]?.downlinkLowHz).toBe(145_825_000);
+        // Frequencies must come back as numbers. Postgres returns BIGINT as a string,
+        // and a string here compares wrongly against every threshold downstream.
+        expect(typeof found[0]?.downlinkLowHz).toBe("number");
+        expect(found[0]?.baud).toBe(1200);
+        expect(found[0]?.inverted).toBe(false);
+      });
+
+      it("updates rather than duplicates when the provider republishes one", async () => {
+        await db.radio.upsertMany([transmitter("a")]);
+        expect(
+          await db.radio.upsertMany([transmitter("a", { description: "Mode V APRS (edited)" })]),
+        ).toEqual({ inserted: 0, updated: 1 });
+
+        const found = await db.radio.forSatellite("25544" as CatalogId);
+        expect(found).toHaveLength(1);
+        expect(found[0]?.description).toBe("Mode V APRS (edited)");
+      });
+
+      it("hides dead transmitters by default and returns them on request", async () => {
+        await db.radio.upsertMany([
+          transmitter("alive-one"),
+          transmitter("dead-one", { alive: false, status: "inactive" }),
+        ]);
+
+        // A ground station wants what works now; the dead entry is history, not the
+        // answer — but "this used to transmit on 145.8" is a real question, so it is
+        // retained rather than deleted.
+        expect((await db.radio.forSatellite("25544" as CatalogId)).map((t) => t.uuid)).toEqual([
+          "alive-one",
+        ]);
+        expect(
+          (await db.radio.forSatellite("25544" as CatalogId, { includeDead: true }))
+            .map((t) => t.uuid)
+            .sort(),
+        ).toEqual(["alive-one", "dead-one"]);
+      });
+
+      it("orders by downlink frequency, so a band can be scanned for", async () => {
+        await db.radio.upsertMany([
+          transmitter("high", { downlinkLowHz: 437_550_000 }),
+          transmitter("low", { downlinkLowHz: 145_800_000 }),
+          transmitter("mid", { downlinkLowHz: 435_000_000 }),
+        ]);
+        expect((await db.radio.forSatellite("25544" as CatalogId)).map((t) => t.uuid)).toEqual([
+          "low",
+          "mid",
+          "high",
+        ]);
+      });
+
+      it("keeps a transmitter with no NORAD id rather than rejecting it", async () => {
+        // SatNOGS carries pre-launch payloads and objects CelesTrak has dropped. A
+        // foreign key would fail ingestion on exactly the records a ground station
+        // most wants, so these are stored and simply not joined to a satellite.
+        await db.radio.upsertMany([transmitter("orphan", { catalogId: undefined })]);
+        expect(await db.radio.count()).toBe(1);
+        expect(await db.radio.forSatellite("25544" as CatalogId)).toEqual([]);
+      });
+
+      it("separates transmitters belonging to different objects", async () => {
+        await db.radio.upsertMany([
+          transmitter("iss"),
+          transmitter("other", { catalogId: "39084" }),
+        ]);
+        expect((await db.radio.forSatellite("25544" as CatalogId)).map((t) => t.uuid)).toEqual([
+          "iss",
+        ]);
+        expect((await db.radio.forSatellite("39084" as CatalogId)).map((t) => t.uuid)).toEqual([
+          "other",
+        ]);
+      });
+
+      it("preserves the provider's own updated timestamp, distinct from retrieval", async () => {
+        await db.radio.upsertMany([transmitter("a")]);
+        const found = await db.radio.forSatellite("25544" as CatalogId);
+        // Two different facts, and this product does not conflate them anywhere else
+        // either: when SatNOGS last changed the record, versus when we asked.
+        expect(found[0]?.updatedAt?.toISOString()).toBe(at(-48).toISOString());
+        expect(found[0]?.retrievedAt.toISOString()).toBe(at(-1).toISOString());
+      });
+
+      it("treats an empty list as a no-op", async () => {
+        expect(await db.radio.upsertMany([])).toEqual({ inserted: 0, updated: 0 });
       });
     });
 

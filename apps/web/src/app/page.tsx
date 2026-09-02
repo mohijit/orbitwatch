@@ -7,6 +7,7 @@ import { LookAnglesInstrument } from "@/components/observer/look-angles";
 import { ObserverPanel } from "@/components/observer/observer-panel";
 import { PassList } from "@/components/observer/pass-list";
 import { VisibleTonightPanel } from "@/components/observer/visible-tonight";
+import { RadioPanel } from "@/components/telemetry/radio-panel";
 import { CommandPalette } from "@/components/search/command-palette";
 import { TelemetryPanel } from "@/components/telemetry/telemetry-panel";
 import { Timeline, type TimelineMode } from "@/components/timeline/timeline";
@@ -128,8 +129,24 @@ export default function HomePage() {
           sunAltitude={observerTelemetry.sunAltitude}
           lighting={observerTelemetry.lighting}
         />
-        <span className="shell__badge" data-testid="catalog-count">
-          {catalogState.status === "ready" ? `${catalogState.count.toLocaleString()} OBJECTS` : "LOADING…"}
+        {/*
+          Three states, not two.
+
+          This used to render "LOADING…" for everything that was not ready, so a
+          catalog that had FAILED claimed to still be trying — indefinitely, and with
+          no way for a user to tell the difference between a slow network and a dead
+          one. The globe shows an error overlay behind it, but the badge is what
+          people read, and it was the one part of the page still saying "wait".
+        */}
+        <span
+          className={`shell__badge${catalogState.status === "failed" ? " shell__badge--error" : ""}`}
+          data-testid="catalog-count"
+        >
+          {catalogState.status === "ready"
+            ? `${catalogState.count.toLocaleString()} OBJECTS`
+            : catalogState.status === "failed"
+              ? "CATALOG UNAVAILABLE"
+              : "LOADING…"}
         </span>
       </header>
 
@@ -159,6 +176,7 @@ export default function HomePage() {
           lookAngles={observerTelemetry.lookAngles}
           hasObserver={observer.location !== undefined}
         />
+        <RadioPanel catalogId={selectedCatalogId} />
         <PassList
           passes={observerTelemetry.passes}
           hasObserver={observer.location !== undefined}

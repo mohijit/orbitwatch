@@ -2,7 +2,7 @@
 
 import { storedObserverSchema, type ObserverSource, type StoredObserver } from "@orbitwatch/contracts";
 import { degrees, kilometers, type ObserverLocation } from "@orbitwatch/orbit-core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
  * Where the user is observing from.
@@ -164,20 +164,42 @@ export function useObserver(): ObserverApi {
     setState({ status: "unset" });
   }, []);
 
+  /**
+   * Branded at this boundary, and only here: the contract schema validates plain
+   * numbers off the wire and out of storage, orbit-core takes tagged units, and this
+   * hook is the one place that knows both.
+   *
+   * MEMOISED, AND THAT IS NOT A MICRO-OPTIMISATION
+   * This used to be an object literal built during render. The page re-renders every
+   * second in LIVE mode, so the observer's identity changed every second even when the
+   * coordinates had not — and everything keyed on it downstream recomputed. The worst
+   * of those was a 24-hour pass search, measured at 28 ms, running once a second on
+   * the main thread instead of once every five minutes; the globe also destroyed and
+   * rebuilt its observer marker on every tick. Both began the moment a location was
+   * set, which is exactly when the app started to feel slower.
+   *
+   * Keyed on the values rather than on `state`, because `state` is replaced on every
+   * status change and the coordinates are what anything downstream actually depends on.
+   */
+  const location = useMemo<ObserverLocation | undefined>(() => {
+    if (state.status !== "set") return undefined;
+    return {
+      latitude: degrees(state.observer.latitude),
+      longitude: degrees(state.observer.longitude),
+      altitude: kilometers(state.observer.altitude),
+      ...(state.observer.label === undefined ? {} : { label: state.observer.label }),
+    };
+  }, [
+    state.status,
+    state.status === "set" ? state.observer.latitude : undefined,
+    state.status === "set" ? state.observer.longitude : undefined,
+    state.status === "set" ? state.observer.altitude : undefined,
+    state.status === "set" ? state.observer.label : undefined,
+  ]);
+
   return {
     state,
-    // Branded at this boundary, and only here: the contract schema validates plain
-    // numbers off the wire and out of storage, orbit-core takes tagged units, and this
-    // hook is the one place that knows both.
-    location:
-      state.status === "set"
-        ? {
-            latitude: degrees(state.observer.latitude),
-            longitude: degrees(state.observer.longitude),
-            altitude: kilometers(state.observer.altitude),
-            ...(state.observer.label === undefined ? {} : { label: state.observer.label }),
-          }
-        : undefined,
+    location,
     requestDeviceLocation,
     setLocation,
     clear,

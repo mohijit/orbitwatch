@@ -15,6 +15,8 @@ import type {
   SatelliteFilter,
   SatelliteRecord,
   SatelliteRepository,
+  RadioRepository,
+  RadioTransmitter,
   SatelliteGroupRepository,
 } from "./repositories.js";
 
@@ -212,6 +214,7 @@ export class PostgresDatabase implements Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
   readonly groups: SatelliteGroupRepository;
+  readonly radio: RadioRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -224,6 +227,7 @@ export class PostgresDatabase implements Database {
     this.satellites = createSatelliteRepository(sql);
     this.elements = createElementRepository(sql);
     this.groups = createGroupRepository(sql);
+    this.radio = createRadioRepository(sql);
     this.providerRuns = createProviderRunRepository(sql);
     this.leases = createLeaseRepository(sql);
   }
@@ -708,6 +712,184 @@ function createProviderRunRepository(sql: Sql): ProviderRunRepository {
 }
 
 // ── ingestion leases ─────────────────────────────────────────────────────────────
+
+interface RadioRow {
+  uuid: string;
+  provider: string;
+  norad_cat_id: string | null;
+  sat_id: string | null;
+  description: string;
+  type: string | null;
+  status: string;
+  alive: boolean;
+  uplink_low_hz: string | number | null;
+  uplink_high_hz: string | number | null;
+  downlink_low_hz: string | number | null;
+  downlink_high_hz: string | number | null;
+  mode: string | null;
+  uplink_mode: string | null;
+  baud: number | null;
+  inverted: boolean | null;
+  service: string | null;
+  citation: string | null;
+  updated_at: Date | null;
+  retrieved_at: Date;
+  first_seen_at: Date;
+  last_seen_at: Date;
+}
+
+/**
+ * BIGINT comes back from postgres.js as a STRING.
+ *
+ * That is correct of the driver — a 64-bit integer does not always survive a double —
+ * and wrong for us if left alone, because `"145825000" > 146000000` compares a string
+ * to a number and silently misbehaves. Frequencies fit comfortably in a double (24 GHz
+ * is nine digits), so converting here is safe and keeps the rest of the codebase in
+ * numbers.
+ */
+function toHertz(value: string | number | null): number | undefined {
+  if (value === null) return undefined;
+  const numeric = typeof value === "string" ? Number(value) : value;
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function toTransmitter(row: RadioRow): RadioTransmitter {
+  return {
+    uuid: row.uuid,
+    provider: row.provider,
+    catalogId: row.norad_cat_id ?? undefined,
+    satId: row.sat_id ?? undefined,
+    description: row.description,
+    type: row.type ?? undefined,
+    status: row.status,
+    alive: row.alive,
+    uplinkLowHz: toHertz(row.uplink_low_hz),
+    uplinkHighHz: toHertz(row.uplink_high_hz),
+    downlinkLowHz: toHertz(row.downlink_low_hz),
+    downlinkHighHz: toHertz(row.downlink_high_hz),
+    mode: row.mode ?? undefined,
+    uplinkMode: row.uplink_mode ?? undefined,
+    baud: row.baud ?? undefined,
+    inverted: row.inverted ?? undefined,
+    service: row.service ?? undefined,
+    citation: row.citation ?? undefined,
+    updatedAt: row.updated_at ?? undefined,
+    retrievedAt: row.retrieved_at,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+function createRadioRepository(sql: Sql): RadioRepository {
+  return {
+    async upsertMany(transmitters) {
+      if (transmitters.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(transmitters, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((transmitter) => ({
+              uuid: transmitter.uuid,
+              provider: transmitter.provider,
+              norad_cat_id: transmitter.catalogId ?? null,
+              sat_id: transmitter.satId ?? null,
+              description: transmitter.description,
+              type: transmitter.type ?? null,
+              status: transmitter.status,
+              alive: transmitter.alive,
+              uplink_low_hz: transmitter.uplinkLowHz ?? null,
+              uplink_high_hz: transmitter.uplinkHighHz ?? null,
+              downlink_low_hz: transmitter.downlinkLowHz ?? null,
+              downlink_high_hz: transmitter.downlinkHighHz ?? null,
+              mode: transmitter.mode ?? null,
+              uplink_mode: transmitter.uplinkMode ?? null,
+              baud: transmitter.baud ?? null,
+              inverted: transmitter.inverted ?? null,
+              service: transmitter.service ?? null,
+              citation: transmitter.citation ?? null,
+              updated_at: transmitter.updatedAt?.toISOString() ?? null,
+              retrieved_at: transmitter.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        // xmax = 0 distinguishes an insert from an update without a second round trip,
+        // the same idiom the element and group writes use. first_seen_at is never
+        // moved forward.
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO radio_transmitters (
+            uuid, provider, norad_cat_id, sat_id, description, type, status, alive,
+            uplink_low_hz, uplink_high_hz, downlink_low_hz, downlink_high_hz,
+            mode, uplink_mode, baud, inverted, service, citation,
+            updated_at, retrieved_at, first_seen_at, last_seen_at
+          )
+          SELECT
+            i.uuid, i.provider, i.norad_cat_id, i.sat_id, i.description, i.type,
+            i.status, i.alive,
+            i.uplink_low_hz, i.uplink_high_hz, i.downlink_low_hz, i.downlink_high_hz,
+            i.mode, i.uplink_mode, i.baud, i.inverted, i.service, i.citation,
+            i.updated_at, i.retrieved_at, now(), now()
+          FROM json_to_recordset(${payload}::json) AS i(
+            uuid TEXT, provider TEXT, norad_cat_id TEXT, sat_id TEXT, description TEXT,
+            type TEXT, status TEXT, alive BOOLEAN,
+            uplink_low_hz BIGINT, uplink_high_hz BIGINT,
+            downlink_low_hz BIGINT, downlink_high_hz BIGINT,
+            mode TEXT, uplink_mode TEXT, baud DOUBLE PRECISION, inverted BOOLEAN,
+            service TEXT, citation TEXT,
+            updated_at TIMESTAMPTZ, retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (uuid) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            norad_cat_id = EXCLUDED.norad_cat_id,
+            sat_id = EXCLUDED.sat_id,
+            description = EXCLUDED.description,
+            type = EXCLUDED.type,
+            status = EXCLUDED.status,
+            alive = EXCLUDED.alive,
+            uplink_low_hz = EXCLUDED.uplink_low_hz,
+            uplink_high_hz = EXCLUDED.uplink_high_hz,
+            downlink_low_hz = EXCLUDED.downlink_low_hz,
+            downlink_high_hz = EXCLUDED.downlink_high_hz,
+            mode = EXCLUDED.mode,
+            uplink_mode = EXCLUDED.uplink_mode,
+            baud = EXCLUDED.baud,
+            inverted = EXCLUDED.inverted,
+            service = EXCLUDED.service,
+            citation = EXCLUDED.citation,
+            updated_at = EXCLUDED.updated_at,
+            retrieved_at = EXCLUDED.retrieved_at,
+            last_seen_at = now()
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async forSatellite(catalogId, options = {}) {
+      const rows = await sql<RadioRow[]>`
+        SELECT * FROM radio_transmitters
+        WHERE norad_cat_id = ${catalogId}
+          ${options.includeDead === true ? sql`` : sql`AND alive = TRUE`}
+        ORDER BY downlink_low_hz NULLS LAST, uuid
+      `;
+      return rows.map(toTransmitter);
+    },
+
+    async count() {
+      const rows = await sql<{ count: string }[]>`SELECT count(*)::text AS count FROM radio_transmitters`;
+      return Number(rows[0]?.count ?? 0);
+    },
+  };
+}
 
 function createGroupRepository(sql: Sql): SatelliteGroupRepository {
   return {

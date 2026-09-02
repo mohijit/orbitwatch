@@ -263,10 +263,78 @@ export interface SatelliteGroupRepository {
 }
 
 /** Everything the application needs from storage, in one place. */
+/**
+ * A radio transmitter, as the provider publishes it.
+ *
+ * Frequencies are in HERTZ, verbatim from the provider. No unit is converted on the way
+ * in: a factor of a thousand is the classic silent error in radio data, and the safest
+ * place for it not to happen is nowhere.
+ */
+export interface RadioTransmitter {
+  readonly uuid: string;
+  readonly provider: string;
+  /** Undefined for SatNOGS entries with no NORAD id yet — pre-launch, mostly. */
+  readonly catalogId: string | undefined;
+  readonly satId: string | undefined;
+  readonly description: string;
+  readonly type: string | undefined;
+  readonly status: string;
+  /** The provider's own claim that this transmitter works. Distinct from `status`. */
+  readonly alive: boolean;
+  readonly uplinkLowHz: number | undefined;
+  readonly uplinkHighHz: number | undefined;
+  readonly downlinkLowHz: number | undefined;
+  readonly downlinkHighHz: number | undefined;
+  readonly mode: string | undefined;
+  readonly uplinkMode: string | undefined;
+  readonly baud: number | undefined;
+  readonly inverted: boolean | undefined;
+  readonly service: string | undefined;
+  readonly citation: string | undefined;
+  /** When the PROVIDER last changed it. Not when we fetched it. */
+  readonly updatedAt: Date | undefined;
+  readonly retrievedAt: Date;
+  readonly firstSeenAt: Date;
+  readonly lastSeenAt: Date;
+}
+
+/** What an ingestion supplies; the seen-at timestamps are the store's business. */
+export type RadioTransmitterInput = Omit<RadioTransmitter, "firstSeenAt" | "lastSeenAt">;
+
+export interface RadioRepository {
+  /**
+   * Insert or update transmitters, keyed on the provider's UUID.
+   *
+   * Upsert rather than replace-all: SatNOGS is queried per satellite as well as in
+   * bulk, and a per-satellite refresh must not delete every other object's
+   * transmitters. Returns inserted/updated counts so an ingestion run can report what
+   * actually changed rather than what it sent.
+   */
+  upsertMany(
+    transmitters: readonly RadioTransmitterInput[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /**
+   * Transmitters for one object.
+   *
+   * `includeDead` defaults to false because a ground station wants what is working
+   * now; the dead entries are history, not the answer. They remain retrievable rather
+   * than deleted, since "this used to transmit on 145.8" is a real question.
+   */
+  forSatellite(
+    catalogId: CatalogId,
+    options?: { readonly includeDead?: boolean },
+  ): Promise<readonly RadioTransmitter[]>;
+
+  /** How many transmitters are stored, for /providers/status and diagnostics. */
+  count(): Promise<number>;
+}
+
 export interface Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
   readonly groups: SatelliteGroupRepository;
+  readonly radio: RadioRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
   /** Run migrations. Safe to call repeatedly; already-applied ones are skipped. */

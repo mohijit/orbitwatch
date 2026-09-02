@@ -72,3 +72,16 @@ test("serves Cesium runtime assets from the copied directory", async ({ request 
     expect(response.status(), `${path} should be served`).toBe(200);
   }
 });
+
+test("says the catalog is unavailable rather than loading forever", async ({ page }) => {
+  // A failed catalog used to render "LOADING…" indefinitely, which is the app claiming
+  // it is still trying after it has given up. The distinction matters to a user
+  // deciding whether to wait, and it is the difference between a slow network and a
+  // dead one.
+  await page.route("**/catalog/elements*", (route) => route.abort("failed"));
+  await page.goto("/");
+
+  await expect(page.getByTestId("catalog-count")).toHaveText("CATALOG UNAVAILABLE", {
+    timeout: 30_000,
+  });
+});
