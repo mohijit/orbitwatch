@@ -263,10 +263,12 @@ export async function registerSatelliteRoutes(
 
     const limited = elements.slice(0, MAX_CATALOG_ELEMENTS);
 
+    // The raw OMM only. See `catalogElementsResponseSchema` for why the per-satellite
+    // envelope is not used here.
     return {
       time: context.now().toISOString(),
       count: limited.length,
-      elements: limited.map(toOrbitalElements),
+      elements: limited.map((element) => element.omm),
     };
   });
 

@@ -49,14 +49,29 @@ const SATELLITE = {
   updatedAt: NOW,
 };
 
+/**
+ * The OMM carries the identity and the epoch, because a real one does.
+ *
+ * This used to be `{ OBJECT_NAME: "ISS (ZARYA)" }` — enough while the catalog wrapped
+ * every record in an envelope that repeated those facts. It is not enough now: the
+ * catalog endpoint serves the provider's record verbatim, so NORAD_CAT_ID and EPOCH
+ * inside it are what the client identifies and propagates from. A fixture thinner than
+ * the real thing would have let that go untested.
+ */
 function elementSet(epoch: Date, overrides: Record<string, unknown> = {}) {
+  const catalogId = typeof overrides["catalogId"] === "string" ? overrides["catalogId"] : "25544";
   return {
     catalogId: "25544",
     provider: "celestrak",
     format: "OMM_JSON" as const,
     epoch,
     retrievedAt: epoch,
-    omm: { OBJECT_NAME: "ISS (ZARYA)" },
+    omm: {
+      OBJECT_NAME: catalogId === "25544" ? "ISS (ZARYA)" : `OBJECT ${catalogId}`,
+      NORAD_CAT_ID: Number(catalogId),
+      // CelesTrak publishes EPOCH without a zone designator, and it is UTC.
+      EPOCH: epoch.toISOString().replace("Z", ""),
+    },
     tleLine1: undefined,
     tleLine2: undefined,
     meanMotion: 15.5,
@@ -479,9 +494,24 @@ describe("OrbitWatch API", () => {
 
       // One current set per object, not the whole history.
       expect(body.count).toBe(2);
-      expect(body.elements.find((entry) => entry.catalogId === "25544")?.epoch).toBe(
+
+      // The catalog serves raw OMM records — no per-satellite envelope, because
+      // repeating `provider`, `format` and a restated `epoch` sixteen thousand times
+      // was a third of an 11 MB response that its only consumer never read. So the
+      // identity and the epoch are read from the OMM itself, which is where the
+      // provider put them.
+      const iss = body.elements.find(
+        (entry) => String(entry["NORAD_CAT_ID"]) === "25544",
+      );
+      expect(iss).toBeDefined();
+      expect(new Date(String(iss?.["EPOCH"]) + "Z").toISOString()).toBe(
         hoursAgo(1).toISOString(),
       );
+
+      // And the envelope really is gone, rather than merely unused.
+      expect(iss).not.toHaveProperty("provider");
+      expect(iss).not.toHaveProperty("format");
+      expect(iss).not.toHaveProperty("meanMotion");
     });
 
     it("compresses the catalog response when the client accepts it", async () => {

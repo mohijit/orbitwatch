@@ -95,7 +95,9 @@ let names: string[] = [];
 let indexById = new Map<string, number>();
 
 async function handleInit(message: InitMessage): Promise<void> {
-  let elements: readonly { readonly catalogId: string; readonly omm: unknown }[];
+  // The catalog serves raw OMM records; the per-satellite envelope is deliberately not
+  // repeated 16,655 times. See `catalogElementsResponseSchema`.
+  let elements: readonly Record<string, unknown>[];
 
   try {
     const response = await fetch(message.url, { cache: "no-store" });
@@ -124,12 +126,12 @@ async function handleInit(message: InitMessage): Promise<void> {
 
   for (const record of elements) {
     try {
-      const { satrec } = parseOmm(record.omm as OMMJsonObject);
+      const { satrec } = parseOmm(record as unknown as OMMJsonObject);
       parsedSatrecs.push(satrec);
       parsedIds.push(satrec.satnum as CatalogId);
       // Kept for the pass list, which names objects rather than numbering them. The
       // OMM carries it, so there is no second lookup to make.
-      const omm = record.omm as { OBJECT_NAME?: unknown };
+      const omm = record as { OBJECT_NAME?: unknown };
       parsedNames.push(
         typeof omm.OBJECT_NAME === "string" ? omm.OBJECT_NAME : String(satrec.satnum),
       );

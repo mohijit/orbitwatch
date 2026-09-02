@@ -253,7 +253,21 @@ export type ElementHistoryResponse = z.infer<typeof elementHistoryResponseSchema
 export const catalogElementsResponseSchema = z.object({
   time: isoTimestampSchema,
   count: z.number().int().nonnegative(),
-  elements: z.array(orbitalElementsSchema),
+  /**
+   * The provider's OMM records, and nothing else.
+   *
+   * Deliberately NOT `orbitalElementsSchema`, which is the right shape for one
+   * satellite and the wrong one sixteen thousand times over. That envelope repeats
+   * `provider` and `format` identically per record, and restates `epoch`,
+   * `meanMotion`, `eccentricity`, `inclination` and `bstar` alongside the same values
+   * inside `omm` — measured at 240 of 664 bytes per record, more than a third of an
+   * 11 MB response, for fields this endpoint's only consumer never reads.
+   *
+   * The client needs the elements to propagate and the name to label; both are in the
+   * OMM. Per-record provenance still exists in full at /satellites/:id/elements, which
+   * is where a user asks about one object rather than renders all of them.
+   */
+  elements: z.array(z.record(z.string(), z.unknown())),
 });
 
 export type CatalogElementsResponse = z.infer<typeof catalogElementsResponseSchema>;
