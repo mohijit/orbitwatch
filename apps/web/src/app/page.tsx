@@ -10,7 +10,9 @@ import { VisibleTonightPanel } from "@/components/observer/visible-tonight";
 import { RadioPanel } from "@/components/telemetry/radio-panel";
 import { SpaceWeatherPanel } from "@/components/telemetry/space-weather";
 import { ImageryPicker } from "@/components/globe/imagery-picker";
+import { OfflineBanner } from "@/components/shell/offline-banner";
 import { PanelRail } from "@/components/shell/panel-rail";
+import { ServiceWorkerRegistration } from "@/components/shell/service-worker";
 import { SolarEvents } from "@/components/telemetry/solar-events";
 import { UpcomingLaunches } from "@/components/telemetry/upcoming-launches";
 import { CommandPalette } from "@/components/search/command-palette";
@@ -19,6 +21,7 @@ import { Timeline, type TimelineMode } from "@/components/timeline/timeline";
 import { useCatalogPositions } from "@/hooks/use-catalog-positions";
 import { useObserver } from "@/hooks/use-observer";
 import { useObserverTelemetry } from "@/hooks/use-observer-telemetry";
+import { useOnline } from "@/hooks/use-online";
 import { usePanels } from "@/hooks/use-panels";
 import { useVisualGroup } from "@/hooks/use-visual-group";
 import { useSelectedSatellite } from "@/hooks/use-selected-satellite";
@@ -39,6 +42,7 @@ export default function HomePage() {
   const [pickingLocation, setPickingLocation] = useState(false);
   const [imageryLayerId, setImageryLayerId] = useState<string | undefined>(undefined);
   const panels = usePanels();
+  const online = useOnline();
 
   // LIVE mode means "now, continuously": advance the clock every second, which
   // matches the worker's default 1 Hz tick rate. SIMULATION freezes it at whatever
@@ -157,6 +161,20 @@ export default function HomePage() {
               : "LOADING…"}
         </span>
       </header>
+
+      <ServiceWorkerRegistration />
+
+      {/*
+        Below the header rather than above it, so appearing and disappearing does not
+        shove the whole page down and back. It sits over the globe, which is the one
+        thing on screen that keeps moving while offline and therefore the one thing
+        most likely to be misread as a live feed.
+      */}
+      <OfflineBanner
+        online={online}
+        fromCache={catalogState.status === "ready" && catalogState.fromCache}
+        retrievedAt={catalogState.status === "ready" ? catalogState.retrievedAt : undefined}
+      />
 
       <SatelliteGlobe
         catalogState={catalogState}

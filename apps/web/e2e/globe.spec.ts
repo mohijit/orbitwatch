@@ -73,12 +73,25 @@ test("serves Cesium runtime assets from the copied directory", async ({ request 
   }
 });
 
-test("says the catalog is unavailable rather than loading forever", async ({ page }) => {
+test("says the catalog is unavailable rather than loading forever", async ({ page, context }) => {
   // A failed catalog used to render "LOADING…" indefinitely, which is the app claiming
   // it is still trying after it has given up. The distinction matters to a user
   // deciding whether to wait, and it is the difference between a slow network and a
   // dead one.
-  await page.route("**/catalog/elements*", (route) => route.abort("failed"));
+  //
+  /*
+   * context.route, NOT page.route.
+   *
+   * page.route does not intercept a request made by a service worker, and the catalog
+   * request now goes through one: the worker's own fetch reached the real network, the
+   * abort never applied, and this test passed a fully loaded catalog while claiming to
+   * have blocked it. Routing at the context covers the service worker too.
+   *
+   * The service worker is deliberately left running rather than blocked for this test,
+   * because the path being verified is the production one: a cache miss with no
+   * network has to surface as a failure rather than as a globe that waits forever.
+   */
+  await context.route("**/catalog/elements*", (route) => route.abort("failed"));
   await page.goto("/");
 
   await expect(page.getByTestId("catalog-count")).toHaveText("CATALOG UNAVAILABLE", {

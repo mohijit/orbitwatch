@@ -50,6 +50,16 @@ export type CatalogTickState =
       readonly count: number;
       readonly failed: number;
       readonly tickTime: number;
+      /**
+       * When the element set behind these positions was retrieved, as an ISO string.
+       *
+       * The catalog response's own `time`. Distinct from `tickTime`, which is the
+       * instant the positions were propagated TO: offline, the first can be hours
+       * behind the second, and the gap between them is the whole point.
+       */
+      readonly retrievedAt: string | undefined;
+      /** True when the service worker served these elements from its cache. */
+      readonly fromCache: boolean;
     };
 
 /**
@@ -94,6 +104,10 @@ export function useCatalogPositions(time: number): CatalogWorker {
   const catalogIdsRef = useRef<readonly string[]>([]);
   /** Mirrors `ready` so the stable request callback can read it without a dependency. */
   const readyRef = useRef(false);
+  // A ref, like catalogIds: the "ready" and "positions" messages arrive separately, and
+  // the positions handler must not re-subscribe every time this changes.
+  const retrievedAtRef = useRef<string | undefined>(undefined);
+  const fromCacheRef = useRef(false);
   // State, not a ref: becoming ready has to re-run the tick effect below, otherwise
   // nothing propagates until `time` next changes — which in SIMULATION is never.
   const [ready, setReady] = useState(false);
@@ -114,7 +128,13 @@ export function useCatalogPositions(time: number): CatalogWorker {
       if (disposed) return;
       const message = event.data as
         | { type: "catalogIds"; ids: readonly string[] }
-        | { type: "ready"; count: number; failed: number }
+        | {
+            type: "ready";
+            count: number;
+            failed: number;
+            retrievedAt: string;
+            fromCache: boolean;
+          }
         | { type: "error"; message: string }
         | { type: "positions"; buffer: ArrayBuffer; time: number }
         | VisibleTonightResult;
@@ -124,6 +144,8 @@ export function useCatalogPositions(time: number): CatalogWorker {
       } else if (message.type === "ready") {
         readyRef.current = true;
         setReady(true);
+        retrievedAtRef.current = message.retrievedAt;
+        fromCacheRef.current = message.fromCache;
         if (message.failed > 0) {
           // Visible in the console rather than swallowed: dropping thousands of
           // objects from the catalog must never be silent.
@@ -153,6 +175,8 @@ export function useCatalogPositions(time: number): CatalogWorker {
           count: catalogIdsRef.current.length,
           failed: 0,
           tickTime: message.time,
+          retrievedAt: retrievedAtRef.current,
+          fromCache: fromCacheRef.current,
         });
       }
     });

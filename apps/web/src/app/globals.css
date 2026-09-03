@@ -804,3 +804,42 @@ html, body {
   border-left: 2px solid var(--ow-accent);
   padding-left: 0.5rem;
 }
+
+/* ── offline banner ──────────────────────────────────────────────────────────── */
+
+/*
+ * Sits under the header, over the globe, spanning the width. Amber rather than red:
+ * being offline is a condition to understand, not a failure to react to, and the app
+ * is still useful in it.
+ */
+.offline-banner {
+  position: absolute;
+  top: 3.1rem;
+  left: 0;
+  right: 0;
+  /* Above the panel rail and the telemetry panel, both at 10: the banner qualifies
+     what they are showing, so it must never end up behind one of them. */
+  z-index: 11;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.6rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: #f4d9a8;
+  background: rgba(58, 42, 12, 0.94);
+  border-bottom: 1px solid rgba(244, 165, 72, 0.45);
+  backdrop-filter: blur(8px);
+}
+.offline-banner__headline { font-weight: 600; letter-spacing: 0.04em; color: #f4a548; }
+.offline-banner__detail { color: #e6d3b4; }
+/* Nothing cached at all is the one case where the app cannot do its job, so it reads
+   as an error rather than as a qualification. */
+.offline-banner--empty {
+  color: #f6c3c3;
+  background: rgba(58, 16, 16, 0.94);
+  border-bottom-color: rgba(248, 113, 113, 0.45);
+}
+.offline-banner--empty .offline-banner__headline { color: #f87171; }
+.offline-banner--empty .offline-banner__detail { color: #eec6c6; }

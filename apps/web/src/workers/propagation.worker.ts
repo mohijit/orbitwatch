@@ -50,7 +50,7 @@ import type {
  *   IN  { type: "tick", time: number }
  *       Epoch milliseconds to propagate to. Sent by the main thread's render loop or
  *       by the timeline when scrubbing.
- *   OUT { type: "ready", count, failed }
+ *   OUT { type: "ready", count, failed, retrievedAt, fromCache }
  *   OUT { type: "error", message }
  *       The catalog could not be fetched, or did not match the shared schema. Fatal
  *       to this worker: there is nothing to propagate.
@@ -98,6 +98,24 @@ async function handleInit(message: InitMessage): Promise<void> {
   // The catalog serves raw OMM records; the per-satellite envelope is deliberately not
   // repeated 16,655 times. See `catalogElementsResponseSchema`.
   let elements: readonly Record<string, unknown>[];
+  /*
+   * When the catalog this run is built from was actually retrieved.
+   *
+   * The response's own `time`, not the moment it arrived here. A service worker can
+   * satisfy this fetch from cache with no network at all, and then the two differ by
+   * however long the app has been offline -- which is precisely the number the offline
+   * banner has to show. Reading the clock here would report "now" for data from
+   * yesterday.
+   */
+  let retrievedAt: string;
+  /*
+   * Whether the service worker answered this from its cache rather than the network.
+   *
+   * Its word, not a guess. `navigator.onLine` is true on a captive portal and against
+   * a dead API, so deciding this from the page would hide the fact in exactly the
+   * cases where the elements are oldest.
+   */
+  let fromCache = false;
 
   try {
     const response = await fetch(message.url, { cache: "no-store" });
@@ -111,6 +129,8 @@ async function handleInit(message: InitMessage): Promise<void> {
     }
     const catalog = catalogElementsResponseSchema.parse(await response.json());
     elements = catalog.elements;
+    retrievedAt = catalog.time;
+    fromCache = response.headers.get("x-orbitwatch-cached") === "1";
   } catch (error) {
     postMessage({
       type: "error",
@@ -151,7 +171,7 @@ async function handleInit(message: InitMessage): Promise<void> {
   indexById = new Map(parsedIds.map((catalogId, index) => [catalogId, index]));
 
   postMessage({ type: "catalogIds", ids: catalogIds });
-  postMessage({ type: "ready", count: satrecs.length, failed });
+  postMessage({ type: "ready", count: satrecs.length, failed, retrievedAt, fromCache });
 }
 
 function handleTick(message: TickMessage): void {
