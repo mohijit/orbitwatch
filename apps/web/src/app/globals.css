@@ -484,7 +484,23 @@ html, body {
 }
 .visible-tonight__item:last-child { border-bottom: none; }
 .visible-tonight__time { font-family: ui-monospace, monospace; color: var(--ow-accent); }
-.visible-tonight__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Name and number share the middle column; the name gives way, the number does not. */
+.visible-tonight__identity { display: flex; align-items: baseline; gap: 0.35rem; min-width: 0; }
+.visible-tonight__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Without this a flex item refuses to shrink below its content, so a long name
+     pushes the number out of the row instead of truncating itself. */
+  min-width: 0;
+}
+.visible-tonight__catalog-id {
+  flex: none;
+  font-family: ui-monospace, monospace;
+  font-size: 0.65rem;
+  color: var(--ow-text-muted);
+  cursor: help;
+}
 .visible-tonight__grade { font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; }
 .visible-tonight__grade--likely { color: #4ade80; }
 .visible-tonight__grade--possible { color: #facc15; }

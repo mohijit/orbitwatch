@@ -124,7 +124,8 @@ export function VisibleTonightPanel({
                   key={`${pass.catalogId}-${pass.aos.time.toISOString()}`}
                   data-testid="visible-tonight-pass"
                   aria-label={
-                    `${pass.name} at ${timeFormat.format(pass.aos.time)}, peak ` +
+                    `${pass.name}, catalog number ${pass.catalogId}, ` +
+                    `at ${timeFormat.format(pass.aos.time)}, peak ` +
                     `${spokenBearing(pass.maximum.elevation, pass.maximum.compass)}, ` +
                     `lasting ${String(Math.round(pass.durationSeconds / 60))} minutes. ` +
                     `${pass.visibility === "LIKELY_VISIBLE" ? "Likely visible" : "Possibly visible"}.`
@@ -133,8 +134,25 @@ export function VisibleTonightPanel({
                   <span className="visible-tonight__time">
                     {timeFormat.format(pass.aos.time)}
                   </span>
-                  <span className="visible-tonight__name" data-testid="visible-tonight-name">
-                    {pass.name}
+                  <span className="visible-tonight__identity">
+                    <span className="visible-tonight__name" data-testid="visible-tonight-name">
+                      {pass.name}
+                    </span>
+                    {/*
+                      The catalog number, beside the name rather than instead of it.
+
+                      Names are how people recognise an object and numbers are how they
+                      look one up: CelesTrak, Space-Track, SatNOGS and every TLE on the
+                      internet are keyed by this. Names also collide and get renamed --
+                      the number never does, so it is what makes a row unambiguous.
+                    */}
+                    <span
+                      className="visible-tonight__catalog-id"
+                      data-testid="visible-tonight-catalog-id"
+                      title="NORAD catalog number: the permanent identifier assigned when the object was catalogued"
+                    >
+                      #{pass.catalogId}
+                    </span>
                   </span>
                   <span className="visible-tonight__geometry">
                     {Math.round(pass.maximum.elevation)}° {pass.maximum.compass} ·{" "}

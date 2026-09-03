@@ -81,6 +81,23 @@ test("finds the dusk passes and rejects the ones in Earth's shadow", async ({ pa
   await expect(names.nth(0)).toHaveText("COSMO-SKYMED 1");
   await expect(names.nth(1)).toHaveText("AJISAI (EGS)");
 
+  /*
+   * The catalog number travels with the name.
+   *
+   * A name is how somebody recognises an object; the number is how they look it up,
+   * because CelesTrak, Space-Track, SatNOGS and every TLE anywhere are keyed by it.
+   * These are the real NORAD numbers for these two objects, taken from the fixture, so
+   * a wiring mistake that showed an index or the wrong row's id fails here rather than
+   * looking plausible.
+   */
+  const ids = page.getByTestId("visible-tonight-catalog-id");
+  await expect(ids.nth(0)).toHaveText("#31598");
+  await expect(ids.nth(1)).toHaveText("#16908");
+
+  // Separate elements, so the name stays exactly the provider's name. Reading them as
+  // one string is how "COSMO-SKYMED 1" quietly becomes "COSMO-SKYMED 1#31598".
+  await expect(names.nth(0)).not.toContainText("#");
+
   // Both are dusk passes: 18:39 and 18:43 local, minutes after the sky goes dark.
   await expect(passes.nth(0)).toContainText("18:39");
   await expect(passes.nth(1)).toContainText("18:43");
