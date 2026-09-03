@@ -22,6 +22,7 @@ const TEST_URL = process.env["ORBITWATCH_TEST_DATABASE_URL"];
 
 /** Application tables, in no particular order — CASCADE handles the dependency. */
 const TABLES = [
+  "watchlist_sync",
   "solar_events",
   "ground_stations",
   "launches",

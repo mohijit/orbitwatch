@@ -88,6 +88,17 @@ export default function WatchlistScreen() {
 
   return (
     <FlatList
+      ListHeaderComponent={
+        <Pressable
+          style={({ pressed }) => [styles.syncLink, pressed && { opacity: 0.75 }]}
+          onPress={() => {
+            router.push("/sync");
+          }}
+          accessibilityRole="button"
+        >
+          <Text style={styles.syncLinkText}>Sync this watchlist to another device…</Text>
+        </Pressable>
+      }
       style={styles.screen}
       contentContainerStyle={styles.content}
       data={entries}
@@ -126,6 +137,15 @@ export default function WatchlistScreen() {
 }
 
 const styles = StyleSheet.create({
+  syncLink: {
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: "center",
+    margin: 12,
+  },
+  syncLinkText: { color: theme.text, fontSize: 13 },
   screen: { flex: 1, backgroundColor: theme.background },
   content: { padding: 12 },
   centre: { flex: 1, backgroundColor: theme.background, alignItems: "center", justifyContent: "center", padding: 24 },

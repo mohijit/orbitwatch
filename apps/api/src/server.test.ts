@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { createMemoryCache, LayeredCache, type CacheDriver } from "@orbitwatch/cache";
 import {
   elementHistoryResponseSchema,
@@ -790,6 +792,187 @@ describe("OrbitWatch API", () => {
       expect((await limited.inject({ url: "/health" })).statusCode).toBe(200);
 
       await limited.close();
+    });
+  });
+
+  // ── watchlist sync ───────────────────────────────────────────────────────
+
+  describe("watchlist sync", () => {
+    async function pair(catalogIds: readonly string[]): Promise<string> {
+      const response = await app.inject({
+        method: "POST",
+        url: "/sync/watchlist",
+        payload: { catalogIds },
+      });
+      expect(response.statusCode).toBe(200);
+      return (response.json() as { code: string }).code;
+    }
+
+    it("hands back a list to whoever holds the code", async () => {
+      const code = await pair(["25544", "20580"]);
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ catalogIds: ["25544", "20580"] });
+    });
+
+    it("mints a different code for every pairing", async () => {
+      // Fifty bits from the system CSPRNG. A repeat here would mean a broken generator,
+      // and two strangers sharing a watchlist.
+      const codes = new Set([await pair(["25544"]), await pair(["25544"]), await pair(["25544"])]);
+      expect(codes.size).toBe(3);
+    });
+
+    it("accepts the code as it was displayed, hyphen and all", async () => {
+      const code = await pair(["25544"]);
+      expect(code).toMatch(/^[0-9A-Z]{5}-[0-9A-Z]{5}$/);
+
+      // And without it, and in the case someone's keyboard produced.
+      for (const variant of [code, code.replace("-", ""), code.toLowerCase()]) {
+        const response = await app.inject({
+          method: "GET",
+          url: "/sync/watchlist",
+          headers: { "x-sync-code": variant },
+        });
+        expect(response.statusCode, variant).toBe(200);
+      }
+    });
+
+    it("answers the same way for a wrong code, a malformed one and none at all", async () => {
+      /*
+       * Telling them apart would confirm to somebody guessing that a code was
+       * well-formed but unclaimed — a free bit of feedback narrowing their search.
+       */
+      const cases = [
+        { "x-sync-code": "ZZZZZ-ZZZZZ" },
+        { "x-sync-code": "not-a-code" },
+        { "x-sync-code": "" },
+        {},
+      ];
+
+      for (const headers of cases) {
+        const response = await app.inject({ method: "GET", url: "/sync/watchlist", headers });
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toMatchObject({ error: { code: "NOT_FOUND" } });
+      }
+    });
+
+    it("replaces the list rather than merging into it", async () => {
+      // Removing a satellite has to survive a sync. A merge would resurrect every entry
+      // the user deleted as soon as the other device uploaded its copy.
+      const code = await pair(["25544", "20580"]);
+
+      const put = await app.inject({
+        method: "PUT",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+        payload: { catalogIds: ["25544"] },
+      });
+      expect(put.statusCode).toBe(200);
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+      expect(response.json()).toMatchObject({ catalogIds: ["25544"] });
+    });
+
+    it("will not let a caller claim a code of their own choosing", async () => {
+      /*
+       * PUT does not create. If it did, anyone could pick a code and own it — and the
+       * entropy argument protecting this whole feature rests on codes being generated
+       * by the server rather than chosen by a caller.
+       */
+      const response = await app.inject({
+        method: "PUT",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": "ABCDE-FGHJK" },
+        payload: { catalogIds: ["25544"] },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it("refuses anything that is not a list of catalog numbers", async () => {
+      // The one endpoint where the client decides what gets stored, so it is the one
+      // that must not become general-purpose storage.
+      for (const payload of [
+        { catalogIds: ["../../etc/passwd"] },
+        { catalogIds: [{ nope: true }] },
+        { catalogIds: "25544" },
+        { catalogIds: Array.from({ length: 501 }, (_, index) => String(index)) },
+        {},
+      ]) {
+        const response = await app.inject({ method: "POST", url: "/sync/watchlist", payload });
+        expect(response.statusCode, JSON.stringify(payload).slice(0, 40)).toBe(400);
+      }
+    });
+
+    it("syncs an empty list as an empty list", async () => {
+      // Clearing a watchlist is a legitimate thing to sync, and must not read back as
+      // "never paired" — which would resurrect the old list on the other device.
+      const code = await pair([]);
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ catalogIds: [] });
+    });
+
+    it("deletes on request, and says nothing about what was there", async () => {
+      const code = await pair(["25544"]);
+
+      const first = await app.inject({
+        method: "DELETE",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+      expect(first.statusCode).toBe(204);
+
+      const gone = await app.inject({
+        method: "GET",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+      expect(gone.statusCode).toBe(404);
+
+      // 204 again for a code that was never real: a different status would tell a
+      // guesser which codes exist.
+      const second = await app.inject({
+        method: "DELETE",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": "ZZZZZ-ZZZZZ" },
+      });
+      expect(second.statusCode).toBe(204);
+    });
+
+    it("never stores the code itself", async () => {
+      /*
+       * THE PROPERTY THE WHOLE DESIGN RESTS ON.
+       *
+       * A database dump must not yield working codes. This reaches past the API into
+       * the store and asserts that what is there is a hash and bears no resemblance to
+       * what the client was given.
+       */
+      const code = await pair(["25544"]);
+      const bare = code.replace("-", "");
+
+      const stored = await database.watchlistSync.get(
+        createHash("sha256").update(bare, "utf8").digest("hex"),
+      );
+
+      expect(stored).toBeDefined();
+      expect(stored?.codeHash).toHaveLength(64);
+      expect(stored?.codeHash).not.toContain(bare);
     });
   });
 });

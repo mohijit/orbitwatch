@@ -548,3 +548,55 @@ export const storedObserverSchema = observerLocationSchema.extend({
 });
 
 export type StoredObserver = z.infer<typeof storedObserverSchema>;
+
+/**
+ * Watchlist sync.
+ *
+ * The one thing this product stores on behalf of a person, and it is deliberately the
+ * least of it: a list of catalog numbers, reachable only by a code the server does not
+ * keep. No account, no email, and above all no observing location — that is a home
+ * address to within a few metres, it never leaves the device, and the app says so.
+ */
+
+/**
+ * A catalog number, bounded.
+ *
+ * The same shape the satellite routes accept. Bounded because this is the one endpoint
+ * where the CLIENT decides what gets stored, and an unbounded string array is how a
+ * store meant for satellite numbers ends up holding something else.
+ */
+export const syncCatalogIdSchema = z
+  .string()
+  .min(1)
+  .max(11)
+  .regex(/^[A-Za-z0-9-]+$/, "a catalog number, not free text");
+
+/**
+ * At most this many followed objects.
+ *
+ * Well above any plausible watchlist — nobody is meaningfully following five hundred
+ * satellites — and low enough that the endpoint cannot be used as free storage.
+ */
+export const MAX_SYNCED_WATCHLIST = 500;
+
+export const watchlistSyncBodySchema = z.object({
+  catalogIds: z.array(syncCatalogIdSchema).max(MAX_SYNCED_WATCHLIST),
+});
+
+export type WatchlistSyncBody = z.infer<typeof watchlistSyncBodySchema>;
+
+/** The response to creating a pairing. The only time the code is ever transmitted back. */
+export const watchlistSyncCreatedSchema = z.object({
+  /** Formatted for a human to read aloud or type: `ABCDE-FGHJK`. */
+  code: z.string(),
+  updatedAt: isoTimestampSchema,
+});
+
+export type WatchlistSyncCreated = z.infer<typeof watchlistSyncCreatedSchema>;
+
+export const watchlistSyncResponseSchema = z.object({
+  catalogIds: z.array(syncCatalogIdSchema),
+  updatedAt: isoTimestampSchema,
+});
+
+export type WatchlistSyncResponse = z.infer<typeof watchlistSyncResponseSchema>;

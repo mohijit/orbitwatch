@@ -4,8 +4,9 @@
 # full suite, and on a public repository anything that needs a credential is also
 # something an untrusted PR must not be able to reach.
 #
-# The storage contract therefore runs against the in-memory implementation only. The
-# Postgres half runs in `verify-postgres.yml`, which is not triggered by pull requests.
+# The storage contract runs against BOTH implementations. The Postgres half needs a
+# database, not a credential: a service container is created for the job and thrown
+# away with it, so a fork's pull request can run it exactly like anyone else.
 
 name: CI
 
@@ -53,6 +54,61 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # The Postgres half of the storage contract.
+  #
+  # WHY THIS JOB EXISTS
+  # `pnpm test` skips it unless ORBITWATCH_TEST_DATABASE_URL is set, and that variable
+  # is deliberately separate from DATABASE_URL because the suite TRUNCATES every table
+  # before each test. Without a job like this the skip is permanent, and every Postgres
+  # query in the repository is shipped having only ever been type-checked -- the
+  # in-memory implementation cannot catch a bad column name or a broken migration.
+  #
+  # A service container rather than a hosted database: no secret, so a fork's pull
+  # request runs it too, and nothing it destroys was ever going to be missed.
+  postgres:
+    name: Storage contract (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: contract
+          POSTGRES_DB: orbitwatch_contract
+        ports:
+          - 5432:5432
+        # The job must not start querying before the server accepts connections.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Storage contract
+        env:
+          ORBITWATCH_TEST_DATABASE_URL: postgres://postgres:contract@127.0.0.1:5432/orbitwatch_contract
+          # A container on the runner's own loopback offers no TLS, and there is nothing
+          # crossing a network to protect. Every hosted deployment leaves this on.
+          DATABASE_SSL: "false"
+        run: pnpm --filter @orbitwatch/database exec vitest run src/contract-postgres.test.ts
 
   # Sharded across four runners, because the whole suite takes ~37 minutes on one.
   #

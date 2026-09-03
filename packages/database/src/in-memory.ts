@@ -24,6 +24,8 @@ import type {
   SatelliteRepository,
   SatelliteGroupMembership,
   SatelliteGroupRepository,
+  WatchlistSyncRecord,
+  WatchlistSyncRepository,
 } from "./repositories.js";
 
 /**
@@ -49,6 +51,7 @@ export class InMemoryDatabase implements Database {
   readonly launches: LaunchRepository;
   readonly stations: GroundStationRepository;
   readonly solarEvents: SolarEventRepository;
+  readonly watchlistSync: WatchlistSyncRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -63,6 +66,7 @@ export class InMemoryDatabase implements Database {
   readonly #launches = new Map<string, LaunchRecord>();
   readonly #stations = new Map<string, GroundStationRecord>();
   readonly #solarEvents = new Map<string, SolarEventRecord>();
+  readonly #watchlistSync = new Map<string, WatchlistSyncRecord>();
   #nextId = 1;
   readonly #now: () => Date;
 
@@ -76,6 +80,7 @@ export class InMemoryDatabase implements Database {
     this.launches = this.#createLaunchRepository();
     this.stations = this.#createStationRepository();
     this.solarEvents = this.#createSolarEventRepository();
+    this.watchlistSync = this.#createWatchlistSyncRepository();
     this.providerRuns = this.#createProviderRunRepository();
     this.leases = this.#createLeaseRepository();
   }
@@ -579,6 +584,36 @@ export class InMemoryDatabase implements Database {
           )
           .sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime());
         return options.limit === undefined ? all : all.slice(0, options.limit);
+      },
+    };
+  }
+
+  #createWatchlistSyncRepository(): WatchlistSyncRepository {
+    const store = this.#watchlistSync;
+    const now = this.#now;
+
+    return {
+      put: async (codeHash, catalogIds) => {
+        const updatedAt = now();
+        // Copied, not referenced: the caller's array must not be able to change what
+        // is stored after the fact.
+        store.set(codeHash, { codeHash, catalogIds: [...catalogIds], updatedAt });
+        return { updatedAt };
+      },
+
+      get: async (codeHash) => store.get(codeHash),
+
+      remove: async (codeHash) => store.delete(codeHash),
+
+      purgeOlderThan: async (before) => {
+        let purged = 0;
+        for (const [hash, record] of store) {
+          if (record.updatedAt.getTime() < before.getTime()) {
+            store.delete(hash);
+            purged += 1;
+          }
+        }
+        return purged;
       },
     };
   }

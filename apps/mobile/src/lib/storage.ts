@@ -22,6 +22,7 @@ import { sanitiseAlertPreferences, type AlertPreferences } from "./pass-alerts";
 const OBSERVER_KEY = "orbitwatch.observer.v1";
 const WATCHLIST_KEY = "orbitwatch.watchlist.v1";
 const ALERTS_KEY = "orbitwatch.alerts.v1";
+const SYNC_CODE_KEY = "orbitwatch.sync-code.v1";
 
 interface StoredObserver {
   readonly latitude: number;
@@ -115,4 +116,29 @@ export async function saveAlertPreferences(preferences: AlertPreferences): Promi
   // Sanitised on the way in as well as on the way out. A caller passing something the
   // rules cannot act on should not be able to persist it and find out later.
   await AsyncStorage.setItem(ALERTS_KEY, JSON.stringify(sanitiseAlertPreferences(preferences)));
+}
+
+/**
+ * The watchlist pairing code, if this device has one.
+ *
+ * A bearer secret, kept in the same place as everything else because there is nowhere
+ * better on a device: the OS keychain is for credentials that unlock something worth
+ * stealing, and this unlocks a list of satellite numbers. Anyone who can read this app's
+ * storage can already read the watchlist itself.
+ */
+export async function loadSyncCode(): Promise<string | undefined> {
+  try {
+    const raw = await AsyncStorage.getItem(SYNC_CODE_KEY);
+    return raw === null || raw.trim() === "" ? undefined : raw;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveSyncCode(code: string): Promise<void> {
+  await AsyncStorage.setItem(SYNC_CODE_KEY, code);
+}
+
+export async function clearSyncCode(): Promise<void> {
+  await AsyncStorage.removeItem(SYNC_CODE_KEY);
 }

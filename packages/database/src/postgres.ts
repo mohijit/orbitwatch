@@ -26,6 +26,7 @@ import type {
   SatelliteGroupRepository,
   SpaceWeatherObservation,
   SpaceWeatherRepository,
+  WatchlistSyncRepository,
 } from "./repositories.js";
 
 /**
@@ -227,6 +228,7 @@ export class PostgresDatabase implements Database {
   readonly launches: LaunchRepository;
   readonly stations: GroundStationRepository;
   readonly solarEvents: SolarEventRepository;
+  readonly watchlistSync: WatchlistSyncRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -244,6 +246,7 @@ export class PostgresDatabase implements Database {
     this.launches = createLaunchRepository(sql);
     this.stations = createStationRepository(sql);
     this.solarEvents = createSolarEventRepository(sql);
+    this.watchlistSync = createWatchlistSyncRepository(sql);
     this.providerRuns = createProviderRunRepository(sql);
     this.leases = createLeaseRepository(sql);
   }
@@ -1319,6 +1322,66 @@ function toSolarEventRecord(row: SolarEventRow): SolarEventRecord {
     summary: row.summary,
     body: row.body,
     retrievedAt: row.retrieved_at,
+  };
+}
+
+/**
+ * Watchlist pairing.
+ *
+ * Every operation is a primary-key lookup on the hash of a code the server never
+ * stores. There is deliberately no query that lists pairings or searches by prefix: the
+ * only way to reach a row is to already hold the code that produced it.
+ */
+function createWatchlistSyncRepository(sql: Sql): WatchlistSyncRepository {
+  return {
+    async put(codeHash, catalogIds) {
+      const rows = await sql<{ updated_at: Date }[]>`
+        INSERT INTO watchlist_sync (code_hash, catalog_ids, created_at, updated_at)
+        VALUES (${codeHash}, ${sql.json([...catalogIds])}, now(), now())
+        ON CONFLICT (code_hash) DO UPDATE SET
+          catalog_ids = EXCLUDED.catalog_ids,
+          updated_at = now()
+        RETURNING updated_at
+      `;
+      return { updatedAt: rows[0]?.updated_at ?? new Date() };
+    },
+
+    async get(codeHash) {
+      const rows = await sql<{ code_hash: string; catalog_ids: unknown; updated_at: Date }[]>`
+        SELECT code_hash, catalog_ids, updated_at
+        FROM watchlist_sync
+        WHERE code_hash = ${codeHash}
+      `;
+      const row = rows[0];
+      if (row === undefined) return undefined;
+
+      /*
+       * Validated on the way out, not trusted.
+       *
+       * JSONB holds whatever was written, and this row may have been written by an
+       * older version of this code. A malformed list should read as an empty one rather
+       * than propagate a non-string into somebody's watchlist.
+       */
+      const catalogIds = Array.isArray(row.catalog_ids)
+        ? row.catalog_ids.filter((value): value is string => typeof value === "string")
+        : [];
+
+      return { codeHash: row.code_hash, catalogIds, updatedAt: row.updated_at };
+    },
+
+    async remove(codeHash) {
+      const rows = await sql<{ code_hash: string }[]>`
+        DELETE FROM watchlist_sync WHERE code_hash = ${codeHash} RETURNING code_hash
+      `;
+      return rows.length > 0;
+    },
+
+    async purgeOlderThan(before) {
+      const rows = await sql<{ code_hash: string }[]>`
+        DELETE FROM watchlist_sync WHERE updated_at < ${before} RETURNING code_hash
+      `;
+      return rows.length;
+    },
   };
 }
 

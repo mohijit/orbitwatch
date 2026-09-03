@@ -13,6 +13,7 @@ import { registerNetworkRoutes } from "./routes/network.js";
 import { registerProviderRoutes } from "./routes/providers.js";
 import { registerSatelliteRoutes } from "./routes/satellites.js";
 import { registerSpaceWeatherRoutes } from "./routes/space-weather.js";
+import { registerSyncRoutes } from "./routes/sync.js";
 
 /**
  * The OrbitWatch HTTP API.
@@ -112,6 +113,14 @@ export async function buildServer(
   await app.register(cors, {
     origin:
       dependencies.corsOrigins === undefined ? false : [...dependencies.corsOrigins],
+    /*
+     * GET only, even though /sync/watchlist also answers POST, PUT and DELETE.
+     *
+     * Those exist for the mobile app, which is not a browser and to which CORS does not
+     * apply. No web page uses them, so allowing them here would widen what a browser
+     * can do to this API in exchange for nothing. Add the methods when something in a
+     * browser actually needs them.
+     */
     methods: ["GET"],
   });
 
@@ -195,6 +204,7 @@ export async function buildServer(
   registerSpaceWeatherRoutes(app, context);
   registerLaunchRoutes(app, context);
   registerNetworkRoutes(app, context);
+  registerSyncRoutes(app, context);
 
   return app;
 }

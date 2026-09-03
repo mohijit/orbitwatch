@@ -500,6 +500,38 @@ export interface SolarEventRepository {
   }): Promise<readonly SolarEventRecord[]>;
 }
 
+/**
+ * A watchlist parked for collection by another device.
+ *
+ * `codeHash`, never the code. The code is a bearer secret held only by the devices
+ * sharing it; the server takes what a client sends, hashes it, and looks up by that —
+ * so this record cannot yield a working code even to someone holding the whole table.
+ */
+export interface WatchlistSyncRecord {
+  readonly codeHash: string;
+  readonly catalogIds: readonly string[];
+  readonly updatedAt: Date;
+}
+
+export interface WatchlistSyncRepository {
+  /** Create or replace the list under this hash. Returns when it was stored. */
+  put(codeHash: string, catalogIds: readonly string[]): Promise<{ readonly updatedAt: Date }>;
+
+  /** The list under this hash, or undefined. Never reveals whether the hash is close. */
+  get(codeHash: string): Promise<WatchlistSyncRecord | undefined>;
+
+  /** Forget one, at the user's request. */
+  remove(codeHash: string): Promise<boolean>;
+
+  /**
+   * Delete pairings untouched since `before`. Returns how many went.
+   *
+   * Abandoned data is a liability rather than an asset: nobody benefits from a list of
+   * satellite numbers left behind by a device that stopped syncing two years ago.
+   */
+  purgeOlderThan(before: Date): Promise<number>;
+}
+
 export interface Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
@@ -509,6 +541,7 @@ export interface Database {
   readonly launches: LaunchRepository;
   readonly stations: GroundStationRepository;
   readonly solarEvents: SolarEventRepository;
+  readonly watchlistSync: WatchlistSyncRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
   /** Run migrations. Safe to call repeatedly; already-applied ones are skipped. */

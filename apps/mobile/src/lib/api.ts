@@ -5,6 +5,10 @@ import {
   satelliteListResponseSchema,
   type ElementsResponse,
   type SatelliteListResponse,
+  watchlistSyncCreatedSchema,
+  watchlistSyncResponseSchema,
+  type WatchlistSyncCreated,
+  type WatchlistSyncResponse,
 } from "@orbitwatch/contracts";
 
 /**
@@ -98,6 +102,72 @@ async function getJson(path: string, params?: Record<string, string>): Promise<u
   }
 
   return response.json();
+}
+
+/**
+ * A request that carries a pairing code, and never puts it in the URL.
+ *
+ * The code is a bearer secret. A secret in a query string is written to every access
+ * log and proxy log between here and the server; in a header it is recorded by none of
+ * them. This is separate from `getJson` so that path can never grow a code parameter by
+ * accident.
+ */
+async function syncRequest(
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  code: string | undefined,
+  body?: unknown,
+): Promise<unknown> {
+  const response = await fetch(new URL("/sync/watchlist", apiBaseUrl()).toString(), {
+    method,
+    headers: {
+      accept: "application/json",
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(code === undefined ? {} : { "x-sync-code": code }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+  if (!response.ok) {
+    let errorCode = "HTTP_ERROR";
+    let message = `Request failed with status ${String(response.status)}`;
+    try {
+      const parsed = (await response.json()) as { error?: { code?: string; message?: string } };
+      errorCode = parsed.error?.code ?? errorCode;
+      message = parsed.error?.message ?? message;
+    } catch {
+      // A non-JSON error body is itself informative; keep the status-derived message.
+    }
+    throw new ApiError(response.status, errorCode, message);
+  }
+
+  return response.status === 204 ? undefined : response.json();
+}
+
+/** Start a pairing. The only call that ever receives a code. */
+export async function createPairing(
+  catalogIds: readonly string[],
+): Promise<WatchlistSyncCreated> {
+  return watchlistSyncCreatedSchema.parse(
+    await syncRequest("POST", undefined, { catalogIds: [...catalogIds] }),
+  );
+}
+
+/** Collect the list stored under a code. Throws ApiError 404 if there is none. */
+export async function fetchPairedWatchlist(code: string): Promise<WatchlistSyncResponse> {
+  return watchlistSyncResponseSchema.parse(await syncRequest("GET", code));
+}
+
+/** Replace the stored list. */
+export async function pushPairedWatchlist(
+  code: string,
+  catalogIds: readonly string[],
+): Promise<void> {
+  await syncRequest("PUT", code, { catalogIds: [...catalogIds] });
+}
+
+/** Unpair, and delete what was stored. */
+export async function deletePairing(code: string): Promise<void> {
+  await syncRequest("DELETE", code);
 }
 
 export async function fetchSatellites(

@@ -1283,6 +1283,79 @@ export function runDatabaseContractTests(
       });
     });
 
+    describe("watchlist sync", () => {
+      // A hash, because that is all this layer ever sees. The code that produced it
+      // lives on two phones and nowhere else.
+      const hashA = "a".repeat(64);
+      const hashB = "b".repeat(64);
+
+      it("stores a list and hands it back", async () => {
+        const { updatedAt } = await db.watchlistSync.put(hashA, ["25544", "20580"]);
+        expect(updatedAt).toBeInstanceOf(Date);
+
+        const stored = await db.watchlistSync.get(hashA);
+        expect(stored?.catalogIds).toEqual(["25544", "20580"]);
+        expect(stored?.codeHash).toBe(hashA);
+      });
+
+      it("replaces the list rather than merging into it", async () => {
+        /*
+         * Removing an object has to survive a sync, which merging would prevent: the
+         * other device would keep handing the deleted entry back and it would return
+         * every time. A watchlist is the user's current answer, not an accumulation.
+         */
+        await db.watchlistSync.put(hashA, ["25544", "20580"]);
+        await db.watchlistSync.put(hashA, ["25544"]);
+
+        expect((await db.watchlistSync.get(hashA))?.catalogIds).toEqual(["25544"]);
+      });
+
+      it("keeps pairings apart", async () => {
+        await db.watchlistSync.put(hashA, ["25544"]);
+        await db.watchlistSync.put(hashB, ["20580"]);
+
+        expect((await db.watchlistSync.get(hashA))?.catalogIds).toEqual(["25544"]);
+        expect((await db.watchlistSync.get(hashB))?.catalogIds).toEqual(["20580"]);
+      });
+
+      it("returns nothing for a hash it has never seen", async () => {
+        // Undefined, not an empty list. "No such pairing" and "a pairing with nothing
+        // on it" are different answers and the API says so with different statuses.
+        expect(await db.watchlistSync.get("c".repeat(64))).toBeUndefined();
+      });
+
+      it("stores an empty list as an empty list", async () => {
+        // Clearing a watchlist is a legitimate state to sync, and must not read back as
+        // "never paired" — which would resurrect the old list on the other device.
+        await db.watchlistSync.put(hashA, []);
+        expect((await db.watchlistSync.get(hashA))?.catalogIds).toEqual([]);
+      });
+
+      it("forgets one on request", async () => {
+        await db.watchlistSync.put(hashA, ["25544"]);
+
+        expect(await db.watchlistSync.remove(hashA)).toBe(true);
+        expect(await db.watchlistSync.get(hashA)).toBeUndefined();
+        // Removing something already gone is not an error, so a retried request after a
+        // dropped connection does not fail the second time.
+        expect(await db.watchlistSync.remove(hashA)).toBe(false);
+      });
+
+      it("purges what has been abandoned and keeps what has not", async () => {
+        // Abandoned data is a liability rather than an asset: nobody benefits from a
+        // list left behind by a device that stopped syncing two years ago.
+        await db.watchlistSync.put(hashA, ["25544"]);
+
+        const beforeEverything = new Date(Date.now() - 60_000);
+        expect(await db.watchlistSync.purgeOlderThan(beforeEverything)).toBe(0);
+        expect(await db.watchlistSync.get(hashA)).toBeDefined();
+
+        const afterEverything = new Date(Date.now() + 60_000);
+        expect(await db.watchlistSync.purgeOlderThan(afterEverything)).toBe(1);
+        expect(await db.watchlistSync.get(hashA)).toBeUndefined();
+      });
+    });
+
     // ── liveness ─────────────────────────────────────────────────────────────
 
     it("reports a non-negative ping latency", async () => {
