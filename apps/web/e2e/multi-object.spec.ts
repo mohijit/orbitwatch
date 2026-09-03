@@ -69,6 +69,14 @@ declare global {
       ticks: TickSummary[];
       primitives: PointPrimitive[];
       renderedPoints: () => RenderedPoint[];
+      /**
+       * Whether the point-primitive patch is in place.
+       *
+       * Reported so that instrumentation arriving too late fails as itself rather than
+       * as "the globe drew nothing", which is a very convincing way to be sent looking
+       * for a rendering bug that is not there.
+       */
+      patched: boolean;
     };
   }
 }
@@ -80,6 +88,7 @@ async function instrument(page: Page): Promise<void> {
     const state: Window["__e2e"] = {
       ticks: [],
       primitives: [],
+      patched: false,
       // Metres in Cesium's fixed frame; kilometres everywhere else in this suite.
       renderedPoints: () =>
         state.primitives.map((primitive) => ({
@@ -126,13 +135,32 @@ async function instrument(page: Page): Promise<void> {
     // PointPrimitive objects it hands back. Those are the live objects Cesium draws,
     // so reading `.position` off them later reports where the globe is actually
     // putting each satellite — not where the data said it should go.
-    //
-    // Found by polling rather than by intercepting the assignment to window.Cesium:
-    // the bundle is an esbuild IIFE whose namespace properties are getter-only, and an
-    // accessor installed on window never fired for it. Polling assumes nothing about
-    // how the global appears. Cesium is a 6 MB download that then has to build a viewer
-    // before the app adds a single point, so a 10 ms poll wins by a wide margin.
-    const poll = setInterval(() => {
+    /*
+     * Installed on the Cesium script's own load event, with a timer only as a backstop.
+     *
+     * WHY NOT JUST A TIMER
+     * This used to be a 10 ms `setInterval` alone, and the reasoning was that Cesium is
+     * a 6 MB download which then has to build a viewer before the app adds a single
+     * point, so 10 ms wins by a wide margin. That is true right up until the timer is
+     * not running at 10 ms: Chromium throttles timers in a page it considers hidden to
+     * once per SECOND, and a headless CI runner is exactly where that happens. A
+     * throttled poll loses the race, `add` is called before the patch exists, and
+     * `primitives` then stays empty for the entire life of the page — which surfaces as
+     * "expected 39, received 0" and reads unmistakably like a broken renderer. It cost
+     * two investigations before the instrument, rather than the app, was the suspect.
+     *
+     * An event listener is not throttled. The app creates the script, attaches its own
+     * load handler, and only then inserts it, so a MutationObserver sees the insertion
+     * and adds this listener before the script has finished loading. Ours runs after
+     * the app's handler and before the promise continuation it schedules, because
+     * microtasks are not drained between two listeners for the same event.
+     *
+     * WHY NOT INTERCEPT window.Cesium DIRECTLY
+     * The bundle is an esbuild IIFE assigned with a top-level `var`, which defines the
+     * property rather than assigning it, and so blows straight past any accessor
+     * installed beforehand.
+     */
+    const patch = (): boolean => {
       // Cast through unknown: the app declares window.Cesium as the full Cesium
       // namespace, and all this needs is one prototype off it.
       const cesium = (
@@ -141,8 +169,9 @@ async function instrument(page: Page): Promise<void> {
         }
       ).Cesium;
       const prototype = cesium?.PointPrimitiveCollection?.prototype;
-      if (prototype === undefined) return;
-      clearInterval(poll);
+      if (prototype === undefined) return false;
+      if (state.patched) return true;
+      state.patched = true;
 
       const originalAdd = prototype["add"] as (...args: unknown[]) => PointPrimitive;
       prototype["add"] = function (this: unknown, ...args: unknown[]): PointPrimitive {
@@ -159,6 +188,41 @@ async function instrument(page: Page): Promise<void> {
         state.primitives.length = 0;
         return originalRemoveAll.apply(this, args);
       };
+
+      return true;
+    };
+
+    // The script is inserted into the head; this fires on that insertion, long before
+    // it has downloaded.
+    const observer = new MutationObserver(() => {
+      for (const script of document.querySelectorAll("script[src*='/cesium/']")) {
+        script.addEventListener("load", () => {
+          patch();
+        });
+      }
+      // Already present, e.g. a second navigation with the bundle in cache.
+      if (patch()) observer.disconnect();
+    });
+    /*
+     * `document`, not `document.documentElement`.
+     *
+     * An init script runs before the document is parsed, so documentElement is still
+     * null and observe() throws a TypeError — which aborts the rest of this script and
+     * takes the interval backstop below down with it, leaving nothing patched at all.
+     * `document` is always there and covers the same subtree.
+     */
+    observer.observe(document, { childList: true, subtree: true });
+
+    /*
+     * The backstop, for the path where the app finds window.Cesium already defined and
+     * never inserts a script at all. Throttling makes this slow, not wrong: it is no
+     * longer the only thing standing between the test and a silent miss.
+     */
+    const poll = setInterval(() => {
+      if (patch()) {
+        clearInterval(poll);
+        observer.disconnect();
+      }
     }, 10);
   });
 }
@@ -244,6 +308,19 @@ test("the globe renders one primitive per object, all at distinct positions", as
   page,
 }) => {
   await openCatalog(page);
+
+  /*
+   * The instrument first, so its own failure cannot masquerade as the app's.
+   *
+   * If the point-primitive patch is not in place, every count below reads zero no
+   * matter what the globe is doing, and the assertion that follows says "expected 39,
+   * received 0" — which is exactly what a renderer drawing nothing looks like.
+   */
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__e2e.patched)) as boolean, {
+      timeout: 30_000,
+    })
+    .toBe(true);
 
   // Positions are written on an animation frame after the first tick, so poll for the
   // scene to be populated rather than assuming a paint has happened.
