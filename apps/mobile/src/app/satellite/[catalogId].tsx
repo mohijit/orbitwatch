@@ -278,6 +278,23 @@ export default function SatelliteDetailScreen() {
         </View>
       )}
 
+      {/*
+        Only offered when it is above the horizon.
+        
+        Below it, the sky finder can do nothing except say the Earth is in the way, and
+        a button that leads only to that message is a button that wastes a trip outside.
+      */}
+      {observer !== undefined && lookAngles !== undefined && lookAngles.elevation >= 0 ? (
+        <Pressable
+          style={styles.finderButton}
+          onPress={() => {
+            router.push(`/finder/${catalogId}`);
+          }}
+        >
+          <Text style={styles.finderButtonText}>Find it in the sky</Text>
+        </Pressable>
+      ) : null}
+
       <Text style={styles.section}>Next 24 hours</Text>
       {passes.length === 0 ? null : (
         <Text style={styles.note}>Tap a pass to share it.</Text>
@@ -353,6 +370,14 @@ const styles = StyleSheet.create({
   centre: { flex: 1, backgroundColor: theme.background, alignItems: "center", justifyContent: "center", padding: 20 },
   headerRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   headerText: { flex: 1 },
+  finderButton: {
+    backgroundColor: theme.accent,
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  finderButtonText: { color: "#04121a", fontWeight: "600", fontSize: 14 },
   name: { color: theme.text, fontSize: 19, fontWeight: "600" },
   ids: { color: theme.textMuted, fontSize: 12, fontFamily: MONO.default, marginTop: 2 },
   watch: { borderColor: theme.border, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },

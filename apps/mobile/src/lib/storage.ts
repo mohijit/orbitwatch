@@ -2,6 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { observerAt, type ObserverLocation } from "@orbitwatch/orbit-core";
 
+import { sanitiseAlertPreferences, type AlertPreferences } from "./pass-alerts";
+
 /**
  * On-device persistence: the watchlist, and the observing location.
  *
@@ -19,6 +21,7 @@ import { observerAt, type ObserverLocation } from "@orbitwatch/orbit-core";
 
 const OBSERVER_KEY = "orbitwatch.observer.v1";
 const WATCHLIST_KEY = "orbitwatch.watchlist.v1";
+const ALERTS_KEY = "orbitwatch.alerts.v1";
 
 interface StoredObserver {
   readonly latitude: number;
@@ -88,4 +91,28 @@ export async function loadWatchlist(): Promise<readonly string[]> {
 
 export async function saveWatchlist(catalogIds: readonly string[]): Promise<void> {
   await AsyncStorage.setItem(WATCHLIST_KEY, JSON.stringify(catalogIds));
+}
+
+/**
+ * Notification preferences.
+ *
+ * The validation is `sanitiseAlertPreferences`, which is pure and lives with the rules
+ * it protects. Everything unreadable here — a missing key, invalid JSON, a shape from
+ * an older version — ends at the same place: the defaults, with alerts OFF. These
+ * settings decide when to wake somebody up, so the failure direction is silence.
+ */
+export async function loadAlertPreferences(): Promise<AlertPreferences> {
+  try {
+    const raw = await AsyncStorage.getItem(ALERTS_KEY);
+    if (raw === null) return sanitiseAlertPreferences(undefined);
+    return sanitiseAlertPreferences(JSON.parse(raw));
+  } catch {
+    return sanitiseAlertPreferences(undefined);
+  }
+}
+
+export async function saveAlertPreferences(preferences: AlertPreferences): Promise<void> {
+  // Sanitised on the way in as well as on the way out. A caller passing something the
+  // rules cannot act on should not be able to persist it and find out later.
+  await AsyncStorage.setItem(ALERTS_KEY, JSON.stringify(sanitiseAlertPreferences(preferences)));
 }

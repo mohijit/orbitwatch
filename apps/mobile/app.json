@@ -26,7 +26,16 @@
         {
           "locationWhenInUsePermission": "OrbitWatch uses your location to compute which satellites pass overhead and where to look for them. It is used on the device and is never sent to a server."
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "OrbitWatch shows the camera view behind the sky finder so you can line the phone up with the satellite. Nothing is recorded, stored or sent anywhere.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-sensors"
     ],
     "experiments": {
       "typedRoutes": true

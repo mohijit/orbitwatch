@@ -8,6 +8,7 @@ import {
   planAlerts,
   type AlertCandidate,
   type AlertPreferences,
+  sanitiseAlertPreferences,
 } from "./pass-alerts";
 
 /**
@@ -256,5 +257,76 @@ describe("planAlerts", () => {
     ];
     const plan = planAlerts(candidates, ON, NOW);
     expect(plan.scheduled.length + plan.skipped.length).toBe(candidates.length);
+  });
+});
+
+describe("sanitiseAlertPreferences", () => {
+  it("returns the defaults for anything unreadable", () => {
+    for (const value of [undefined, null, "nonsense", 42, []]) {
+      expect(sanitiseAlertPreferences(value)).toEqual(DEFAULT_ALERT_PREFERENCES);
+    }
+  });
+
+  it("never turns alerts on for someone who did not turn them on", () => {
+    /*
+     * The asymmetry that matters. A corrupt or unrecognised stored value must fail
+     * towards silence: waking somebody at 4am because a JSON blob could not be read is
+     * not a bug they will report, it is one they will uninstall over.
+     */
+    expect(sanitiseAlertPreferences({ enabled: "yes" }).enabled).toBe(false);
+    expect(sanitiseAlertPreferences({}).enabled).toBe(false);
+    expect(sanitiseAlertPreferences({ enabled: true }).enabled).toBe(true);
+  });
+
+  it("clamps a nonsense elevation instead of falling back to the default", () => {
+    /*
+     * Clamping keeps the direction of the intent. A stored 500 becomes 90 — still
+     * "only the very best passes" — where resetting to the 30 degree default would make
+     * the app noisier than the user last asked for.
+     *
+     * The lower bound is 10 because predictPasses does not report a pass below it at
+     * all, so a smaller number is not a looser filter: it is one that never matches,
+     * which reads as alerts being broken.
+     */
+    expect(sanitiseAlertPreferences({ minimumElevation: 500 }).minimumElevation).toBe(90);
+    expect(sanitiseAlertPreferences({ minimumElevation: 2 }).minimumElevation).toBe(10);
+    expect(sanitiseAlertPreferences({ minimumElevation: -40 }).minimumElevation).toBe(10);
+    expect(sanitiseAlertPreferences({ minimumElevation: 45 }).minimumElevation).toBe(45);
+  });
+
+  it("keeps the safe side of the visibility rule when the value is missing", () => {
+    // Defaulting this to false would promise sightings of satellites in Earth's shadow.
+    expect(sanitiseAlertPreferences({}).onlyVisiblePasses).toBe(true);
+    expect(sanitiseAlertPreferences({ onlyVisiblePasses: "no" }).onlyVisiblePasses).toBe(true);
+    expect(sanitiseAlertPreferences({ onlyVisiblePasses: false }).onlyVisiblePasses).toBe(false);
+  });
+
+  it("takes both ends of a quiet window or neither", () => {
+    // Half a window is not a window, and guessing the other end invents a silence the
+    // user never asked for.
+    expect(sanitiseAlertPreferences({ quietHours: { startHour: 22 } }).quietHours).toBeUndefined();
+    expect(sanitiseAlertPreferences({ quietHours: { startHour: 22, endHour: 7 } })).toMatchObject({
+      quietHours: { startHour: 22, endHour: 7 },
+    });
+    // 24 is not an hour of the day.
+    expect(
+      sanitiseAlertPreferences({ quietHours: { startHour: 22, endHour: 24 } }).quietHours,
+    ).toBeUndefined();
+  });
+
+  it("does not let one bad field discard the rest of the configuration", () => {
+    // Each field falls back on its own, so an unreadable value costs that setting and
+    // not a configuration the user spent time on.
+    const preferences = sanitiseAlertPreferences({
+      enabled: true,
+      minimumElevation: "high",
+      leadTimeMinutes: 25,
+      maxPerNight: 5,
+    });
+
+    expect(preferences.enabled).toBe(true);
+    expect(preferences.leadTimeMinutes).toBe(25);
+    expect(preferences.maxPerNight).toBe(5);
+    expect(preferences.minimumElevation).toBe(DEFAULT_ALERT_PREFERENCES.minimumElevation);
   });
 });

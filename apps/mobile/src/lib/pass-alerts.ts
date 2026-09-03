@@ -65,6 +65,85 @@ export const DEFAULT_ALERT_PREFERENCES: AlertPreferences = {
   maxPerNight: 3,
 };
 
+/**
+ * Bounds on each preference, and the reason each bound exists.
+ *
+ * `predictPasses` does not report a pass below 10 degrees at all, so a minimum below
+ * that is not a looser setting — it is a value that cannot ever match, which would read
+ * as "alerts are broken".
+ */
+const BOUNDS = {
+  minimumElevation: { min: 10, max: 90 },
+  leadTimeMinutes: { min: 1, max: 120 },
+  maxPerNight: { min: 1, max: 10 },
+} as const;
+
+function clamp(value: unknown, bounds: { min: number; max: number }, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(bounds.max, Math.max(bounds.min, value));
+}
+
+function hour(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value)) return undefined;
+  return value >= 0 && value <= 23 ? value : undefined;
+}
+
+/**
+ * Turn whatever was on disk into preferences that are safe to act on.
+ *
+ * Stored values outlive the code that wrote them, and these decide when to wake
+ * somebody up. Every field is validated independently and falls back on its own, so one
+ * unrecognised value does not silently reset the rest of a configuration the user
+ * chose.
+ *
+ * NUMBERS ARE CLAMPED, NOT REJECTED
+ * Clamping keeps the direction of the intent: a stored minimum elevation of 500 becomes
+ * 90, which is still "only the very best passes". Falling back to the default would
+ * instead make the app noisier than the user last asked for, and notification fatigue
+ * is the failure mode this whole module is built around.
+ */
+export function sanitiseAlertPreferences(value: unknown): AlertPreferences {
+  const candidate: Record<string, unknown> =
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+
+  const rawQuiet = candidate["quietHours"];
+  const quiet =
+    typeof rawQuiet === "object" && rawQuiet !== null
+      ? (rawQuiet as Record<string, unknown>)
+      : undefined;
+  const startHour = hour(quiet?.["startHour"]);
+  const endHour = hour(quiet?.["endHour"]);
+
+  return {
+    // Off unless the stored value explicitly says otherwise. Anything unreadable must
+    // not turn notifications ON for somebody who never enabled them.
+    enabled: candidate["enabled"] === true,
+    minimumElevation: clamp(
+      candidate["minimumElevation"],
+      BOUNDS.minimumElevation,
+      DEFAULT_ALERT_PREFERENCES.minimumElevation,
+    ),
+    leadTimeMinutes: clamp(
+      candidate["leadTimeMinutes"],
+      BOUNDS.leadTimeMinutes,
+      DEFAULT_ALERT_PREFERENCES.leadTimeMinutes,
+    ),
+    // Defaults to true: the conservative setting is the one that does not promise a
+    // sighting of something in the Earth's shadow.
+    onlyVisiblePasses: candidate["onlyVisiblePasses"] !== false,
+    maxPerNight: clamp(
+      candidate["maxPerNight"],
+      BOUNDS.maxPerNight,
+      DEFAULT_ALERT_PREFERENCES.maxPerNight,
+    ),
+    // Both hours or neither: half a window is not a window, and guessing the other end
+    // would invent a silence the user never asked for.
+    ...(startHour !== undefined && endHour !== undefined
+      ? { quietHours: { startHour, endHour } }
+      : {}),
+  };
+}
+
 export interface AlertCandidate {
   readonly catalogId: string;
   readonly name: string;

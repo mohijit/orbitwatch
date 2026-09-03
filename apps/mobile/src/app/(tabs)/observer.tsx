@@ -1,4 +1,5 @@
 import * as Location from "expo-location";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -30,6 +31,7 @@ type GpsState =
   | { readonly status: "failed"; readonly message: string };
 
 export default function ObserverScreen() {
+  const router = useRouter();
   const [observer, setObserver] = useState<ObserverLocation | undefined>(undefined);
   const [loaded, setLoaded] = useState(false);
   const [latitude, setLatitude] = useState("");
@@ -194,6 +196,23 @@ export default function ObserverScreen() {
           accessibilityRole="button"
         >
           <Text style={styles.secondaryText}>Forget this location</Text>
+        </Pressable>
+      )}
+
+      {/*
+        Alerts live behind the observing location, because that is what they depend on:
+        a pass is a fact about a place, and there is nothing to notify anyone about
+        until this screen has been filled in.
+      */}
+      {observer === undefined ? null : (
+        <Pressable
+          style={({ pressed }) => [styles.secondary, pressed && styles.buttonPressed]}
+          onPress={() => {
+            router.push("/alerts");
+          }}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryText}>Pass alerts…</Text>
         </Pressable>
       )}
 
