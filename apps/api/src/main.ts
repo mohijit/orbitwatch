@@ -11,6 +11,7 @@ import {
   type Database,
 } from "@orbitwatch/database";
 
+import { loadServerConfig } from "./config.js";
 import { buildServer } from "./server.js";
 
 /**
@@ -45,13 +46,12 @@ function readEnvFile(path: string): Record<string, string> {
   }
   return env;
 }
-
 async function main(): Promise<void> {
   const repoRoot = resolve(process.cwd(), "..", "..");
   const env = { ...readEnvFile(resolve(repoRoot, ".env.local")), ...process.env };
 
-  const port = Number(env["PORT"] ?? 3333);
-  const host = env["HOST"] ?? "0.0.0.0";
+  const config = loadServerConfig(env);
+  const { PORT: port, HOST: host } = config;
 
   let database: Database;
   if (hasDatabaseConfig(env)) {
@@ -75,20 +75,15 @@ async function main(): Promise<void> {
     `  cache    : ${cache.hasSharedLayer ? "shared (Upstash) + in-process" : "in-process only"}`,
   );
 
-  const corsOrigins = (env["CORS_ORIGINS"] ?? "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
-
   const app = await buildServer({
     database,
     cache,
     version: env["npm_package_version"] ?? "0.0.0",
     logger: true,
-    ...(corsOrigins.length > 0 ? { corsOrigins } : {}),
-    ...(env["RATE_LIMIT_PER_MINUTE"] === undefined
+    ...(config.CORS_ORIGINS.length > 0 ? { corsOrigins: config.CORS_ORIGINS } : {}),
+    ...(config.RATE_LIMIT_PER_MINUTE === undefined
       ? {}
-      : { rateLimitPerMinute: Number(env["RATE_LIMIT_PER_MINUTE"]) }),
+      : { rateLimitPerMinute: config.RATE_LIMIT_PER_MINUTE }),
   });
 
   /**
