@@ -10,19 +10,35 @@ Real-time satellite tracking for web, PWA, iOS and Android.
 
 ## Status
 
-Under active development, built milestone by milestone. **M0, M1 and the backend half
-of M2 are complete.** Nothing here is production-deployed.
+Under active development, built milestone by milestone. The web app is deployed at
+**[orbitwatch.mohijitsingh.com](https://orbitwatch.mohijitsingh.com)**, the API runs on
+Fly.io, and ingestion runs on a schedule against the hosted database. The native app
+installs and runs on Android.
 
 | Milestone | Scope | Status |
 |---|---|---|
 | M0 | Architecture validation, renderer proofs of concept, benchmarks | ✅ Complete |
 | M1 | Shared orbital core | ✅ Complete |
-| M2 | Backend: storage, cache, ingestion, API | 🟡 In progress — storage and API done, live ingestion blocked on CelesTrak |
-| M3–M10 | Web MVP, observer tools, native apps, data richness, production | ⬜ Not started |
+| M2 | Backend: storage, cache, ingestion, API | ✅ Complete |
+| M3 | Web MVP: globe, catalog, search, telemetry, timeline | ✅ Complete |
+| M4 | Observer system: location, look angles, passes, visibility | ✅ Complete |
+| M5 | Native mobile MVP | 🟡 Android build installs and runs. The Cesium runtime is not yet bundled into the app, so the globe tab says so rather than rendering. iOS needs a paid account. |
+| M6 | Mobile differentiators | 🟡 Notifications, deep links and sharing done, and the **cross-platform agreement gate is met on a device**. Widgets, Live Activity and haptics are not built. |
+| M7 | Data richness: SatNOGS, Launch Library, space weather | 🟡 SOCRATES conjunctions deliberately deferred |
+| M8 | PWA: manifest, service worker, offline shell | ✅ Complete |
+| M8.5 | The web app in a phone browser | ✅ Complete, measured on a device |
+| M9 | AR sky finder, advanced alerts, optional sync | 🟡 Sky finder verified on hardware; watchlist sync storage live |
+| M10 | Production: accessibility audit, monitoring, store submission | ⬜ Not started |
 
-**Verification:** typecheck (14 packages) · lint (14) · **403 unit tests** · build (8) ·
-4 Playwright browser tests — all passing. A further **41 storage-contract tests run
-against real PostgreSQL 17.6** when a throwaway database is configured (see below).
+What has been confirmed on physical hardware — and, as importantly, what has not — is
+recorded in [`docs/device-verification.md`](docs/device-verification.md).
+
+**Verification:** `pnpm typecheck && pnpm lint && pnpm test && pnpm build` across the
+workspace — **700 unit tests** and **68 Playwright browser tests**, all passing. Of those
+unit tests, **93 are storage-contract tests** exercised against the in-memory
+implementation; the same 93 run against **real PostgreSQL** when a throwaway database is
+configured (see below), so the two implementations are held to one contract rather than
+to two suites that can drift apart.
 
 ---
 

@@ -6,6 +6,8 @@ import {
   canAim,
   orientationFrom,
   sight,
+  smoothBearing,
+  smoothGravity,
   uncertaintyRadius,
   type CameraGeometry,
   type Calibration,
@@ -169,49 +171,87 @@ describe("sight", () => {
 describe("orientationFrom", () => {
   const radians = (degrees: number): number => (degrees * Math.PI) / 180;
 
-  it("points at the horizon when the phone is held upright", () => {
-    // beta of 90 is a vertical phone, and the camera on its back looks straight out.
-    const orientation = orientationFrom(120, {
-      alpha: 0,
-      beta: radians(90),
-      gamma: 0,
-    });
+  /*
+   * G is written out rather than normalised to 1 because both units occur in practice:
+   * expo-sensors reports the Accelerometer in g and DeviceMotion in m/s^2. The vector
+   * is normalised before use, so both must give the same answer, and one test below
+   * asserts exactly that.
+   */
+  const G = 9.81;
 
-    expect(orientation.pitch).toBeCloseTo(0, 6);
-    // Heading comes from the location service, not from the motion sensor: alpha is
-    // measured from wherever the device happened to be when the sensor started.
-    expect(orientation.heading).toBe(120);
+  it("points at the horizon when the phone is held upright", () => {
+    // Upright: world up runs along the screen, so gravity is entirely on y.
+    const orientation = orientationFrom(120, { x: 0, y: G, z: 0 });
+
+    expect(orientation?.pitch).toBeCloseTo(0, 4);
+    // Heading comes from the location service, not from any motion sensor: it is the
+    // only source that knows the magnetic declination, and therefore true north.
+    expect(orientation?.heading).toBe(120);
   });
 
   it("points at the zenith when the phone is lying on its face", () => {
-    const orientation = orientationFrom(0, { alpha: 0, beta: radians(180), gamma: 0 });
-    expect(orientation.pitch).toBeCloseTo(90, 6);
+    expect(orientationFrom(0, { x: 0, y: 0, z: -G })?.pitch).toBeCloseTo(90, 4);
   });
 
   it("points at the ground when the phone is lying on its back", () => {
-    const orientation = orientationFrom(0, { alpha: 0, beta: 0, gamma: 0 });
-    expect(orientation.pitch).toBeCloseTo(-90, 6);
+    expect(orientationFrom(0, { x: 0, y: 0, z: G })?.pitch).toBeCloseTo(-90, 4);
   });
 
-  it("holds still past vertical instead of flipping end over end", () => {
+  it("tells above the horizon from below it, which the reported angle cannot", () => {
     /*
-     * Tipped past the zenith, the camera is looking at the ground behind the user and
-     * every value there is equally useless. Wrapping the angle would send the whole
-     * overlay somersaulting the instant someone leaned back a little too far, which
-     * reads as a broken app rather than as an unhelpful viewing angle.
+     * THE BUG THIS PREVENTS, MEASURED ON A DEVICE.
+     *
+     * Android derives its tilt from SensorManager.getOrientation, whose pitch is
+     * defined over a quarter turn either side of level. Held flat, upright, then tilted
+     * until the camera aimed 45 degrees up, it reported beta of 0, 86 and 45: the value
+     * climbs to vertical and reflects. So beta of 45 means BOTH 45 up and 45 down, and
+     * an implementation reading it could never point at the sky at all.
+     *
+     * Gravity separates the two, because the two attitudes genuinely differ in which
+     * side of the screen plane the world is on.
      */
-    expect(orientationFrom(0, { alpha: 0, beta: radians(200), gamma: 0 }).pitch).toBe(90);
-    expect(orientationFrom(0, { alpha: 0, beta: radians(-30), gamma: 0 }).pitch).toBe(-90);
+    const up45 = orientationFrom(0, {
+      x: 0,
+      y: G * Math.cos(radians(45)),
+      z: -G * Math.sin(radians(45)),
+    });
+    expect(up45?.pitch).toBeCloseTo(45, 4);
+
+    const down45 = orientationFrom(0, {
+      x: 0,
+      y: G * Math.cos(radians(45)),
+      z: G * Math.sin(radians(45)),
+    });
+    expect(down45?.pitch).toBeCloseTo(-45, 4);
   });
 
-  it("passes the roll through as reported", () => {
-    // The one assumption in this module that cannot be checked without a phone. It is
-    // asserted anyway, so that correcting it on hardware is a one-line change here
-    // rather than an unexplained sign somewhere inside a component.
-    expect(orientationFrom(0, { alpha: 0, beta: radians(90), gamma: radians(25) }).roll).toBeCloseTo(
-      25,
-      6,
-    );
+  it("reports roll positive when the top of the phone goes right", () => {
+    // Verified on a device: tilting clockwise moves the marker anticlockwise.
+    const rolled = orientationFrom(0, {
+      x: -Math.sin(radians(25)),
+      y: Math.cos(radians(25)),
+      z: 0,
+    });
+    expect(rolled?.roll).toBeCloseTo(25, 4);
+    expect(rolled?.pitch).toBeCloseTo(0, 4);
+  });
+
+  it("accepts a reading in g as readily as one in metres per second squared", () => {
+    const inG = orientationFrom(0, { x: 0, y: 0, z: 1 });
+    const inMetres = orientationFrom(0, { x: 0, y: 0, z: G });
+    expect(inG?.pitch).toBeCloseTo(inMetres?.pitch ?? NaN, 6);
+    expect(inG?.pitch).toBeCloseTo(-90, 4);
+  });
+
+  it("refuses to guess an attitude it cannot measure", () => {
+    /*
+     * No sample yet, or free fall. An earlier version fell back to the platform tilt
+     * angle here, which is the computation now known to be wrong on Android -- so the
+     * fallback would have pointed confidently at the wrong patch of sky rather than
+     * failing visibly. The caller has to handle absence instead.
+     */
+    expect(orientationFrom(0, undefined)).toBeUndefined();
+    expect(orientationFrom(0, { x: 0, y: 0, z: 0 })).toBeUndefined();
   });
 });
 
@@ -290,5 +330,43 @@ describe("uncertaintyRadius", () => {
     const narrow = uncertaintyRadius(20, { horizontalFov: 30, verticalFov: 30 });
 
     expect(narrow).toBeGreaterThan(wide);
+  });
+});
+
+describe("smoothing", () => {
+  it("passes the first sample straight through", () => {
+    // Nothing to average against yet, and starting from zero would make the overlay
+    // sweep in from the ground every time the screen opens.
+    expect(smoothGravity(undefined, { x: 0, y: 0, z: 1 }, 0.15)).toEqual({ x: 0, y: 0, z: 1 });
+    expect(smoothBearing(undefined, 47, 0.2)).toBe(47);
+  });
+
+  it("moves a fraction of the way toward each new sample", () => {
+    const next = smoothGravity({ x: 0, y: 0, z: 0 }, { x: 10, y: 20, z: 30 }, 0.5);
+    expect(next).toEqual({ x: 5, y: 10, z: 15 });
+  });
+
+  it("converges on a steady reading", () => {
+    let g = { x: 0, y: 0, z: 0 };
+    for (let i = 0; i < 200; i += 1) g = smoothGravity(g, { x: 0, y: 0, z: 1 }, 0.15);
+    expect(g.z).toBeCloseTo(1, 6);
+  });
+
+  it("takes the short way round north instead of through south", () => {
+    /*
+     * THE BUG THIS PREVENTS. Averaging 359 and 1 arithmetically gives 180, which is the
+     * exact opposite bearing: the overlay would fling itself across the whole sky every
+     * time the user pointed near north.
+     */
+    expect(smoothBearing(359, 1, 0.5)).toBeCloseTo(0, 6);
+    expect(smoothBearing(1, 359, 0.5)).toBeCloseTo(0, 6);
+    expect(smoothBearing(350, 10, 1)).toBeCloseTo(10, 6);
+  });
+
+  it("stays within 0 to 360", () => {
+    expect(smoothBearing(359, 5, 1)).toBeGreaterThanOrEqual(0);
+    expect(smoothBearing(359, 5, 1)).toBeLessThan(360);
+    expect(smoothBearing(1, 355, 1)).toBeGreaterThanOrEqual(0);
+    expect(smoothBearing(1, 355, 1)).toBeLessThan(360);
   });
 });

@@ -1,8 +1,8 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Location from "expo-location";
 import { useLocalSearchParams, useNavigation } from "expo-router";
-import { DeviceMotion } from "expo-sensors";
-import { useEffect, useMemo, useState } from "react";
+import { Accelerometer } from "expo-sensors";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -28,6 +28,8 @@ import {
   canAim,
   orientationFrom,
   sight,
+  smoothBearing,
+  smoothGravity,
   uncertaintyRadius,
   type Calibration,
   type CameraGeometry,
@@ -49,10 +51,17 @@ import { MONO, theme } from "@/lib/theme";
  * `@/lib/sky-finder`, which is pure and fully tested. This file subscribes to sensors,
  * asks that module what to draw, and draws it.
  *
- * NOT VERIFIED ON HARDWARE
- * There is no way to test a camera, a magnetometer and a sky in CI, and this has not yet
- * run on a device. The geometry underneath it is tested; the wiring is not. The known
- * unknown is the sign of the roll axis — see `orientationFrom`.
+ * VERIFIED ON HARDWARE, AND WHAT THAT CHANGED
+ * Run on an Android device, three things were wrong that no test could have caught.
+ * Tilt was read from the platform angle, which on Android is defined over a quarter
+ * turn and reflects past vertical, so the camera could never point above the horizon.
+ * `DeviceMotion` stalled outright mid-sweep, freezing the overlay wherever it last
+ * knew. And the accelerometer was sampled ten times a second, which reads as a stutter
+ * rather than a position. Tilt now comes from the bare `Accelerometer` at 60Hz, low-pass
+ * filtered. The roll direction was checked on the device and is correct as written.
+ *
+ * What remains unverified is absolute accuracy, and deliberately so: the compass is
+ * uncertain by at least 20 degrees, which is why this screen draws a circle.
  */
 
 /**
@@ -67,6 +76,26 @@ const NOMINAL_HORIZONTAL_FOV = 67;
 
 /** Recompute the satellite's position this often. It moves; the sky does not wait. */
 const TICK_MS = 500;
+
+/**
+ * Sample the accelerometer at roughly the display refresh rate.
+ *
+ * The overlay is redrawn from these, so the sample rate IS the frame rate of the thing
+ * being aimed. At the 100ms this started on, the marker advanced ten times a second and
+ * read as a stutter rather than as a position.
+ */
+const ACCELEROMETER_INTERVAL_MS = 16;
+
+/**
+ * How much of each new sample to believe. See smoothGravity.
+ *
+ * At 60Hz this settles in about six samples, so a tenth of a second of lag against a
+ * marker that no longer swings when the phone is swept across the sky.
+ */
+const GRAVITY_SMOOTHING = 0.15;
+
+/** The same, for the compass, which is noisier still. */
+const HEADING_SMOOTHING = 0.2;
 
 type LoadState =
   | { readonly status: "loading" }
@@ -85,11 +114,20 @@ export default function SkyFinderScreen() {
   const [now, setNow] = useState(() => new Date());
 
   const [heading, setHeading] = useState<Location.LocationHeadingObject | undefined>(undefined);
-  const [rotation, setRotation] = useState<{ alpha: number; beta: number; gamma: number }>({
-    alpha: 0,
-    beta: Math.PI / 2,
-    gamma: 0,
-  });
+  /*
+   * The gravity vector, low-pass filtered. Undefined until the accelerometer produces
+   * its first sample, which is a real state and not a zero: it is the difference
+   * between not knowing which way is down and believing down is nowhere.
+   */
+  const [gravity, setGravity] = useState<{ x: number; y: number; z: number } | undefined>(
+    undefined,
+  );
+  /*
+   * Filter state. Refs rather than state: they are written on every sample and read on
+   * the next one, and re-rendering for their own sake would be pure cost.
+   */
+  const gravityRef = useRef<{ x: number; y: number; z: number } | undefined>(undefined);
+  const headingRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     navigation.setOptions({ title: "Sky finder" });
@@ -155,7 +193,21 @@ export default function SkyFinderScreen() {
     void (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted" || cancelled) return;
-      subscription = await Location.watchHeadingAsync(setHeading);
+      subscription = await Location.watchHeadingAsync((reading) => {
+        /*
+         * -1 is the sentinel for "no location fix, so true north is unknowable". It is
+         * a state, not a bearing, and averaging it with real ones would turn a refusal
+         * to aim into a slow drift toward aiming wrongly.
+         */
+        if (reading.trueHeading < 0) {
+          headingRef.current = undefined;
+          setHeading(reading);
+          return;
+        }
+        const smoothed = smoothBearing(headingRef.current, reading.trueHeading, HEADING_SMOOTHING);
+        headingRef.current = smoothed;
+        setHeading({ ...reading, trueHeading: smoothed });
+      });
     })();
 
     return () => {
@@ -164,10 +216,25 @@ export default function SkyFinderScreen() {
     };
   }, []);
 
+  /*
+   * Tilt comes from the bare Accelerometer, not from DeviceMotion.
+   *
+   * DeviceMotion is a composite of several sensors, and on the device this was first
+   * run on its listener stalled outright: the event counter stopped advancing partway
+   * through tilting, and its first half-dozen measurements carried no acceleration
+   * field at all. A stalled listener freezes the overlay pointing wherever it last
+   * knew, which is worse than admitting it does not know.
+   *
+   * The accelerometer alone is enough for what this screen needs, because gravity is
+   * the whole of the tilt question. Heading still comes from expo-location, which is
+   * the only thing that knows true north.
+   */
   useEffect(() => {
-    DeviceMotion.setUpdateInterval(100);
-    const subscription = DeviceMotion.addListener((motion) => {
-      if (motion.rotation !== undefined) setRotation(motion.rotation);
+    Accelerometer.setUpdateInterval(ACCELEROMETER_INTERVAL_MS);
+    const subscription = Accelerometer.addListener((reading) => {
+      const smoothed = smoothGravity(gravityRef.current, reading, GRAVITY_SMOOTHING);
+      gravityRef.current = smoothed;
+      setGravity(smoothed);
     });
     return () => {
       subscription.remove();
@@ -193,7 +260,10 @@ export default function SkyFinderScreen() {
     heading?.accuracy ?? 0,
     heading?.trueHeading ?? -1,
   );
-  const orientation: DeviceOrientation = orientationFrom(heading?.trueHeading ?? 0, rotation);
+  const orientation: DeviceOrientation | undefined = orientationFrom(
+    heading?.trueHeading ?? 0,
+    gravity,
+  );
 
   const lookAngles: LookAngles | undefined =
     state.status === "ready" && observer !== undefined
@@ -233,6 +303,7 @@ export default function SkyFinderScreen() {
           height={height}
         />
       </View>
+
     </View>
   );
 }
@@ -250,7 +321,7 @@ function Overlay({
   readonly state: LoadState;
   readonly observer: ObserverLocation | undefined;
   readonly lookAngles: LookAngles | undefined;
-  readonly orientation: DeviceOrientation;
+  readonly orientation: DeviceOrientation | undefined;
   readonly calibration: Calibration;
   readonly camera: CameraGeometry;
   readonly width: number;
@@ -263,6 +334,21 @@ function Overlay({
   }
   if (lookAngles === undefined) {
     return <Banner tone="bad">This object cannot be propagated to the current time.</Banner>;
+  }
+  /*
+   * No usable gravity reading, so which way the phone is tilted is unknown. Saying so
+   * is the only honest option: the alternative is to assume an attitude and draw a
+   * marker from it, which looks exactly like a working overlay and is not one.
+   */
+  if (orientation === undefined) {
+    return (
+      <Banner tone="bad">
+        This device is not reporting which way it is tilted, so the finder cannot aim.
+        {"\n\n"}
+        {state.name} is at {lookAngles.azimuth.toFixed(0)} deg {lookAngles.compass},{" "}
+        {lookAngles.elevation.toFixed(0)} deg up.
+      </Banner>
+    );
   }
 
   /*

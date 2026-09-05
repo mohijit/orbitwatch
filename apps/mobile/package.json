@@ -21,6 +21,7 @@
     "expo": "~55.0.31",
     "expo-camera": "~55.0.23",
     "expo-constants": "~55.0.17",
+    "expo-dev-client": "~55.0.40",
     "expo-linking": "~55.0.17",
     "expo-location": "~55.1.14",
     "expo-notifications": "~55.0.27",
