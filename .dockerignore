@@ -1,0 +1,47 @@
+# What never belongs in a build context.
+#
+# Note what is NOT excluded: apps/web and apps/mobile keep their package.json files,
+# because `pnpm install --frozen-lockfile` validates the lockfile against every member
+# of the workspace and fails outright if one is missing. Their heavy directories are
+# excluded individually instead.
+
+# Installed inside the image, never copied in — a host node_modules is the wrong
+# platform's binaries and several hundred megabytes of context.
+node_modules
+**/node_modules
+
+.git
+.github
+
+# Build output. Rebuilt in the image; copying it in risks shipping something stale.
+dist
+**/dist
+**/.next
+**/.turbo
+**/tsconfig.tsbuildinfo
+
+# 14 MB of Cesium engine, copied into apps/web/public at build time and irrelevant to
+# the API.
+apps/web/public/cesium
+
+# Never, under any circumstances, into an image layer.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+**/!.env.example
+
+# Local state and test artefacts.
+.data
+test-results
+playwright-report
+**/test-results
+**/playwright-report
+*.log
+
+# Editor and OS noise.
+.vscode
+.idea
+.DS_Store
+Thumbs.db
