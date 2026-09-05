@@ -6,7 +6,7 @@
   "description": "OrbitWatch — real-time satellite tracking platform (web, PWA, iOS, Android)",
   "packageManager": "pnpm@11.24.0",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "turbo run build",
