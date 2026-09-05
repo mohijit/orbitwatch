@@ -79,11 +79,28 @@ test("open, search ISS, select, verify panel, scrub time, return to live", async
     timeout: 5_000,
   });
 
-  // The panel must be showing real data for the NEW instant, not the live one. The
-  // element set is unchanged, so only the distance from its epoch can have moved.
-  await expect(page.getByTestId("accuracy-badge")).toBeVisible({ timeout: 15_000 });
+  /*
+   * The panel must be showing real data for the NEW instant, not the live one. The
+   * element set is unchanged, so only the distance from its epoch can have moved.
+   *
+   * A MINUTE, NOT FIFTEEN SECONDS.
+   * This is the slowest link in the whole journey and it was the only one held to a
+   * short budget. Scrubbing debounces, fetches `/satellites/:id/elements?at=...`, and
+   * then has to get a React update onto the screen while the globe is rasterising every
+   * frame on the CPU through SwiftShader. Measured three times in a row on this machine
+   * it took 4.1s, 4.8s and 40.9s — an order of magnitude of spread on identical work,
+   * because what varies is how much main thread the renderer leaves behind. On a
+   * shared CI runner the slow end is slower still, and this failed one shard while
+   * passing 76/76 locally.
+   *
+   * Raised rather than retried, and the assertion is unchanged: it still requires the
+   * label to actually differ, so a panel that quietly kept showing the live instant
+   * fails exactly as before. The test budget is 300s for precisely this reason, and a
+   * 15s sub-assertion inside it was never consistent with that.
+   */
+  await expect(page.getByTestId("accuracy-badge")).toBeVisible({ timeout: 60_000 });
   await expect(page.getByTestId("element-epoch")).not.toHaveText(liveLabel ?? "", {
-    timeout: 15_000,
+    timeout: 60_000,
   });
 
   // RETURN TO LIVE.
@@ -131,8 +148,12 @@ test("scrubbing past the earliest element set reports no data, not a stale posit
     timeout: 5_000,
   });
 
+  // Same budget as the scrub above, for the same reason: this waits on a debounced
+  // fetch plus a React update competing with a CPU-rasterised globe. It has not failed
+  // yet, but it is the identical race and there is nothing to be gained from waiting
+  // for it to fail on a shard before saying so.
   await expect(page.locator(".telemetry-panel__status--error")).toBeVisible({
-    timeout: 15_000,
+    timeout: 60_000,
   });
   await expect(page.getByTestId("accuracy-badge")).toBeHidden();
 });
