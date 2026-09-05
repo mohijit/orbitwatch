@@ -35,12 +35,28 @@ export const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 
 export interface PanelRailProps {
   readonly open: Readonly<Record<PanelId, boolean>>;
+  /**
+   * Which panel is in front, when only one can be.
+   *
+   * Undefined in the wide layout, and that is not an oversight: there, every open panel
+   * is on screen simultaneously, so there is no "in front" and claiming one would be
+   * false. In one column two tabs can both be pressed — both panels are open — while
+   * only one is in the sheet, and `aria-pressed` alone cannot tell those apart. This is
+   * what distinguishes them, for a reader who cannot see which card is showing.
+   */
+  readonly activePanel?: PanelId | undefined;
   readonly visible: boolean;
   readonly onToggle: (id: PanelId) => void;
   readonly onSetVisible: (visible: boolean) => void;
 }
 
-export function PanelRail({ open, visible, onToggle, onSetVisible }: PanelRailProps) {
+export function PanelRail({
+  open,
+  activePanel,
+  visible,
+  onToggle,
+  onSetVisible,
+}: PanelRailProps) {
   if (!visible) {
     return (
       <button
@@ -71,6 +87,10 @@ export function PanelRail({ open, visible, onToggle, onSetVisible }: PanelRailPr
           // aria-pressed, not aria-expanded: these are toggle buttons whose panels are
           // siblings rather than children, so "pressed" is the accurate relationship.
           aria-pressed={open[panel.id]}
+          // Only ever set where an "in front" genuinely exists. Omitted entirely rather
+          // than set to false, because `aria-current="false"` on four of five tabs is
+          // noise in a place that should carry one fact.
+          {...(activePanel === panel.id ? { "aria-current": true as const } : {})}
           onClick={() => {
             onToggle(panel.id);
           }}

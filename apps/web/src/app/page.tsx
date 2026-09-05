@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { BottomSheet, type SheetDetent } from "@/components/shell/bottom-sheet";
 import { SatelliteGlobe } from "@/components/globe/satellite-globe";
 import { LookAnglesInstrument } from "@/components/observer/look-angles";
 import { ObserverPanel } from "@/components/observer/observer-panel";
@@ -11,7 +12,7 @@ import { RadioPanel } from "@/components/telemetry/radio-panel";
 import { SpaceWeatherPanel } from "@/components/telemetry/space-weather";
 import { ImageryPicker } from "@/components/globe/imagery-picker";
 import { OfflineBanner } from "@/components/shell/offline-banner";
-import { PanelRail } from "@/components/shell/panel-rail";
+import { PANEL_DEFINITIONS, PanelRail } from "@/components/shell/panel-rail";
 import { ServiceWorkerRegistration } from "@/components/shell/service-worker";
 import { SolarEvents } from "@/components/telemetry/solar-events";
 import { UpcomingLaunches } from "@/components/telemetry/upcoming-launches";
@@ -19,10 +20,11 @@ import { CommandPalette } from "@/components/search/command-palette";
 import { TelemetryPanel } from "@/components/telemetry/telemetry-panel";
 import { Timeline, type TimelineMode } from "@/components/timeline/timeline";
 import { useCatalogPositions } from "@/hooks/use-catalog-positions";
+import { NARROW_VIEWPORT, useMediaQuery } from "@/hooks/use-media-query";
 import { useObserver } from "@/hooks/use-observer";
 import { useObserverTelemetry } from "@/hooks/use-observer-telemetry";
 import { useOnline } from "@/hooks/use-online";
-import { usePanels } from "@/hooks/use-panels";
+import { PANEL_IDS, usePanels, type PanelId } from "@/hooks/use-panels";
 import { useVisualGroup } from "@/hooks/use-visual-group";
 import { useSelectedSatellite } from "@/hooks/use-selected-satellite";
 import { BRANDING } from "@/lib/branding";
@@ -41,8 +43,30 @@ export default function HomePage() {
   const [selectedCatalogId, setSelectedCatalogId] = useState<string | undefined>(undefined);
   const [pickingLocation, setPickingLocation] = useState(false);
   const [imageryLayerId, setImageryLayerId] = useState<string | undefined>(undefined);
+  const [detent, setDetent] = useState<SheetDetent>("peek");
   const panels = usePanels();
   const online = useOnline();
+
+  /*
+   * Narrow means one column, which forces two questions the wide layout never has to
+   * answer: which open panel is in front, and how much of the globe is covered.
+   *
+   * `false` until the first effect runs, so the prerendered HTML and the first client
+   * render agree. Everything below must therefore be correct in the wide arrangement
+   * first and adapt afterwards — which is the right default anyway.
+   */
+  const narrow = useMediaQuery(NARROW_VIEWPORT);
+
+  /**
+   * Whether a panel is mounted at all.
+   *
+   * Wide: every open panel, side by side. Narrow: only the one in front — because each
+   * of these fetches on mount and refreshes on a timer, and the point of unmounting a
+   * closed panel is that it stops polling. A phone on a metered connection should be
+   * talking to one provider, not five.
+   */
+  const shows = (id: PanelId): boolean =>
+    panels.open[id] && (!narrow || panels.activePanel === id);
 
   // LIVE mode means "now, continuously": advance the clock every second, which
   // matches the worker's default 1 Hz tick rate. SIMULATION freezes it at whatever
@@ -109,10 +133,63 @@ export default function HomePage() {
     );
   };
 
+  /*
+   * Selecting an object raises the sheet.
+   *
+   * On a wide screen the telemetry panel appears in a corner and the globe is otherwise
+   * untouched. In one column there is nowhere for it to appear, so a selection that left
+   * the sheet at peek would answer "which object is this" with a name and nothing else.
+   * Raised to half rather than full: the user selected something ON the globe, and
+   * covering the globe to describe it takes away what they were looking at.
+   */
+  useEffect(() => {
+    if (selectedCatalogId === undefined) return;
+    setDetent((current) => (current === "peek" ? "half" : current));
+  }, [selectedCatalogId]);
+
+  /**
+   * What a rail button does — which is not the same thing in one column as in two.
+   *
+   * Wide, every open panel is on screen at once, so the only question a button answers
+   * is open or closed, and it toggles.
+   *
+   * Narrow, a panel can be open and BEHIND another one. Tapping its tab there plainly
+   * means "show me that one", and toggling would close it instead — which is how this
+   * behaved when first written, and it is baffling: the tab you tap to see something
+   * makes it disappear. So in one column a background tab is promoted, and only the tab
+   * already in front toggles, which is what makes it the way back to the globe.
+   */
+  const handlePanelToggle = (id: PanelId): void => {
+    const wasOpen = panels.open[id];
+    const wasInFront = panels.activePanel === id;
+
+    if (narrow && wasOpen && !wasInFront) {
+      panels.bringToFront(id);
+      setDetent((current) => (current === "peek" ? "half" : current));
+      return;
+    }
+
+    panels.toggle(id);
+    if (!wasOpen) setDetent((current) => (current === "peek" ? "half" : current));
+    else if (wasInFront) setDetent("peek");
+  };
+
   const handleTimelineChange = (nextTime: number, nextMode: TimelineMode): void => {
     setTime(nextTime);
     setMode(nextMode);
   };
+
+  // What the sheet is showing, for the handle's accessible name. Selection wins over the
+  // active panel, matching what the sheet actually renders first.
+  const sheetLabel =
+    selectedCatalogId !== undefined
+      ? telemetry.status === "ready"
+        ? telemetry.name
+        : "Satellite details"
+      : (PANEL_DEFINITIONS.find((panel) => panel.id === panels.activePanel)?.label ?? "Panels");
+
+  const panelsShown = panels.railVisible && PANEL_IDS.some(shows);
+  const sheetHasContent = selectedCatalogId !== undefined || panelsShown;
 
   const handlePickLocation = (latitude: number, longitude: number): void => {
     // Altitude is deliberately not inferred from the click. The globe knows the
@@ -194,77 +271,93 @@ export default function HomePage() {
         </div>
       ) : null}
 
-      <TelemetryPanel
-        catalogId={selectedCatalogId}
-        telemetry={telemetry}
-        onClose={() => setSelectedCatalogId(undefined)}
-      >
-        <LookAnglesInstrument
-          lookAngles={observerTelemetry.lookAngles}
-          hasObserver={observer.location !== undefined}
-        />
-        <RadioPanel catalogId={selectedCatalogId} />
-        <PassList
-          passes={observerTelemetry.passes}
-          hasObserver={observer.location !== undefined}
-          satrec={telemetry.status === "ready" ? telemetry.satrec : undefined}
-          observer={observer.location}
-        />
-      </TelemetryPanel>
+      {/*
+        One container for everything that is "not the globe".
+
+        Wide, this is a transparent click-through box the size of the shell, and the two
+        cards inside position themselves against it exactly as they did when they were
+        siblings — the sheet chrome is hidden and nothing moves. Narrow, it becomes the
+        bottom sheet and the cards flow into it. Same DOM either way, so there is one
+        accessibility tree and the panels are mounted once, not twice.
+      */}
+      {sheetHasContent ? (
+        <BottomSheet detent={detent} onDetentChange={setDetent} label={sheetLabel}>
+          <TelemetryPanel
+            catalogId={selectedCatalogId}
+            telemetry={telemetry}
+            onClose={() => setSelectedCatalogId(undefined)}
+          >
+            <LookAnglesInstrument
+              lookAngles={observerTelemetry.lookAngles}
+              hasObserver={observer.location !== undefined}
+            />
+            <RadioPanel catalogId={selectedCatalogId} />
+            <PassList
+              passes={observerTelemetry.passes}
+              hasObserver={observer.location !== undefined}
+              satrec={telemetry.status === "ready" ? telemetry.satrec : undefined}
+              observer={observer.location}
+            />
+          </TelemetryPanel>
+
+          {/*
+            Only the panels being shown are rendered, not merely hidden with CSS.
+
+            Each of these fetches on mount and refreshes on a timer, so keeping a closed
+            panel mounted would poll four providers for a user looking at the globe. It
+            also means the stack has no height when nothing is open, which is what makes
+            "just show me the Earth" actually show them the Earth. In one column `shows`
+            narrows this further to the single panel in front, for the same reason.
+          */}
+          {panelsShown ? (
+            <aside className="panel-stack" aria-label="Information panels">
+              {shows("tonight") ? (
+                <div className="panel-stack__panel">
+                  <VisibleTonightPanel
+                    state={worker.visibleTonight}
+                    hasObserver={observer.location !== undefined}
+                    groupUnavailable={visualGroup.status === "unavailable"}
+                    onRefresh={refreshVisibleTonight}
+                  />
+                </div>
+              ) : null}
+
+              {shows("weather") ? (
+                <div className="panel-stack__panel">
+                  <SpaceWeatherPanel />
+                </div>
+              ) : null}
+
+              {shows("solar") ? (
+                <div className="panel-stack__panel">
+                  <SolarEvents />
+                </div>
+              ) : null}
+
+              {shows("launches") ? (
+                <div className="panel-stack__panel">
+                  <UpcomingLaunches />
+                </div>
+              ) : null}
+
+              {shows("imagery") ? (
+                <div className="panel-stack__panel">
+                  <ImageryPicker selected={imageryLayerId} onSelect={setImageryLayerId} />
+                </div>
+              ) : null}
+            </aside>
+          ) : null}
+        </BottomSheet>
+      ) : null}
 
       <PanelRail
         open={panels.open}
+        // Only meaningful in one column; wide, every open panel is already on screen.
+        activePanel={narrow ? panels.activePanel : undefined}
         visible={panels.railVisible}
-        onToggle={panels.toggle}
+        onToggle={handlePanelToggle}
         onSetVisible={panels.setRailVisible}
       />
-
-      {/*
-        Only the open panels are rendered, not merely hidden with CSS.
-
-        Each of these fetches on mount and refreshes on a timer, so keeping a closed
-        panel mounted would poll four providers for a user looking at the globe. It
-        also means the stack has no height when nothing is open, which is what makes
-        "just show me the Earth" actually show them the Earth.
-      */}
-      {panels.railVisible && Object.values(panels.open).some(Boolean) ? (
-        <aside className="panel-stack" aria-label="Information panels">
-          {panels.open.tonight ? (
-            <div className="panel-stack__panel">
-              <VisibleTonightPanel
-                state={worker.visibleTonight}
-                hasObserver={observer.location !== undefined}
-                groupUnavailable={visualGroup.status === "unavailable"}
-                onRefresh={refreshVisibleTonight}
-              />
-            </div>
-          ) : null}
-
-          {panels.open.weather ? (
-            <div className="panel-stack__panel">
-              <SpaceWeatherPanel />
-            </div>
-          ) : null}
-
-          {panels.open.solar ? (
-            <div className="panel-stack__panel">
-              <SolarEvents />
-            </div>
-          ) : null}
-
-          {panels.open.launches ? (
-            <div className="panel-stack__panel">
-              <UpcomingLaunches />
-            </div>
-          ) : null}
-
-          {panels.open.imagery ? (
-            <div className="panel-stack__panel">
-              <ImageryPicker selected={imageryLayerId} onSelect={setImageryLayerId} />
-            </div>
-          ) : null}
-        </aside>
-      ) : null}
 
       {/*
         Selecting a satellite opens a panel somewhere else on the page. A sighted user
@@ -288,9 +381,17 @@ export default function HomePage() {
 
       <Timeline time={time} mode={mode} onChange={handleTimelineChange} />
 
+      {/*
+        The link is not decoration. This strip is one line on a phone, which is not
+        enough room to qualify a claim properly, and the full account of how a position
+        is derived and what it is worth already exists on /methodology. Everything else
+        here is `pointer-events: none` — the paragraph was intercepting clicks meant for
+        the panels behind it.
+      */}
       <footer className="shell__note">
         Positions in this product are calculated from published orbital elements using
-        SGP4/SDP4. They are not continuous onboard GPS telemetry.
+        SGP4/SDP4. They are not continuous onboard GPS telemetry.{" "}
+        <a href="/methodology">How this is derived</a>.
       </footer>
     </main>
   );

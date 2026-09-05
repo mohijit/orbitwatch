@@ -23,6 +23,16 @@ export const viewport: Viewport = {
   themeColor: "#070b14",
   // The globe is full-bleed; the app must extend under device notches.
   viewportFit: "cover",
+  /*
+   * The virtual keyboard shrinks the layout instead of covering it.
+   *
+   * Search is the one place a phone keyboard appears, and under the default
+   * (`resizes-visual`) it slides over the bottom two thirds of the screen while the
+   * layout viewport stays 844px tall — so the results the user is typing to filter are
+   * behind the keys they are typing on. `resizes-content` makes `100dvh` mean the space
+   * actually left, which is what the palette and the sheet are both sized against.
+   */
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

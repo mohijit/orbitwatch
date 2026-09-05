@@ -6,6 +6,7 @@ import type { ObserverLocation } from "@orbitwatch/orbit-core";
 
 import type { CatalogTickState } from "../../hooks/use-catalog-positions";
 import { POSITION_FIELDS } from "../../hooks/use-catalog-positions";
+import { COARSE_POINTER, useMediaQuery } from "../../hooks/use-media-query";
 import type { SelectedTelemetryState } from "../../hooks/use-selected-satellite";
 import { CESIUM_WIDGET_CSS_HREF, loadCesium, type CesiumModule } from "./cesium-loader";
 import {
@@ -46,6 +47,26 @@ const MAX_EXTRAPOLATION_SECONDS = 5;
 
 /** Stable id so the observer marker can be replaced without touching other entities. */
 const OBSERVER_ENTITY_ID = "observer-location";
+
+/**
+ * Hit tolerance for a fingertip, in CSS pixels.
+ *
+ * Smaller than the ~44px a finger actually covers, on purpose: at 44 the box spans a
+ * meaningful slice of a crowded orbital shell and starts returning a neighbour of
+ * whatever was aimed at. 28 is wide enough that an ordinary tap connects and narrow
+ * enough that the object it connects with is the one under the finger.
+ */
+const TOUCH_PICK_BOX_PX = 28;
+
+/**
+ * How big a catalog point is drawn, by pointer type.
+ *
+ * Touch gets slightly larger dots because they double as the aiming target, and a 3px
+ * dot gives a finger nothing to aim at. Deliberately only one pixel larger: 16,655 fat
+ * points stop being a catalog and become a smear across the limb.
+ */
+const POINT_SIZE = { fine: 3, coarse: 4 } as const;
+const SELECTED_POINT_SIZE = { fine: 8, coarse: 12 } as const;
 
 export interface SatelliteGlobeProps {
   readonly catalogState: CatalogTickState;
@@ -89,6 +110,18 @@ export function SatelliteGlobe({
   onPickLocation,
   imageryLayerId,
 }: SatelliteGlobeProps) {
+  /*
+   * Touch hardware gets bigger points and a halved frame rate.
+   *
+   * Both are about the same thing — a fingertip and a phone SoC are what a desktop
+   * design silently assumes away. `false` until after mount, so the first frame draws
+   * the fine-pointer sizes and the effect below corrects them; a point that is one pixel
+   * wrong for one frame is not worth a hydration mismatch to avoid.
+   */
+  const coarsePointer = useMediaQuery(COARSE_POINTER);
+  const pointerClass = coarsePointer ? "coarse" : "fine";
+  const frameIntervalMs = coarsePointer ? 1000 / 30 : 0;
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
   const pointsRef = useRef<CesiumPoints | null>(null);
@@ -254,7 +287,22 @@ export function SatelliteGlobe({
           return;
         }
 
-        const picked: unknown = viewer.scene.pick(click.position);
+        /*
+         * The pick box is sized to the pointer, not to the target.
+         *
+         * `scene.pick` defaults to a 3x3 pixel rectangle, which is the same size as the
+         * points themselves — fine for a mouse cursor, and useless for a fingertip
+         * roughly 44 pixels across. A catalog you cannot tap is a catalog you cannot use
+         * on a phone, and it fails silently: every tap lands on empty space and reads as
+         * a deselect. Widened to a finger-sized box on touch input.
+         *
+         * Read at click time rather than captured once, because a hybrid device can gain
+         * or lose a coarse pointer between the viewer being built and this firing.
+         */
+        const coarse =
+          typeof window.matchMedia === "function" && window.matchMedia(COARSE_POINTER).matches;
+        const pickBox = coarse ? TOUCH_PICK_BOX_PX : 3;
+        const picked: unknown = viewer.scene.pick(click.position, pickBox, pickBox);
         if (
           picked !== undefined &&
           typeof picked === "object" &&
@@ -327,7 +375,7 @@ export function SatelliteGlobe({
         points.add({
           id: catalogId,
           position: Cesium.Cartesian3.ZERO,
-          pixelSize: 3,
+          pixelSize: POINT_SIZE[pointerClass],
           color: Cesium.Color.fromCssColorString("#8ecbff").withAlpha(0.85),
           outlineWidth: 0,
         });
@@ -338,14 +386,29 @@ export function SatelliteGlobe({
     const count = catalogState.catalogIds.length;
     const tickTime = catalogState.tickTime;
 
-    const selectedColor = Cesium.Color.fromCssColorString("#ffcc55");
-    const normalColor = Cesium.Color.fromCssColorString("#8ecbff").withAlpha(0.85);
     const hidden = Cesium.Cartesian3.fromDegrees(0, 0, NOT_RENDERABLE_ALTITUDE);
 
     let frame = 0;
+    let lastDrawnAt = 0;
     const scratch = new Cesium.Cartesian3();
 
-    const render = (): void => {
+    const render = (now: number): void => {
+      /*
+       * On touch hardware this runs at half rate.
+       *
+       * The frame loop's job is dead reckoning between 1 Hz worker ticks, and it does
+       * not need sixty samples a second to do that: at 30 Hz the ISS moves 255 m
+       * between drawn frames, against 7.66 km per worker tick, so the motion is still
+       * far smoother than the data underneath it. What it does halve is the per-frame
+       * cost of writing 16,655 positions — which is main-thread work competing with
+       * React and touch handling on a chip with a fraction of a desktop's budget.
+       */
+      if (frameIntervalMs > 0 && now - lastDrawnAt < frameIntervalMs) {
+        frame = requestAnimationFrame(render);
+        return;
+      }
+      lastDrawnAt = now;
+
       // Only extrapolate while the timeline is actually running forward in real time.
       // In SIMULATION the instant is frozen, so wall-clock elapsed time has no bearing
       // on where these objects are and advancing them would be invention.
@@ -372,11 +435,18 @@ export function SatelliteGlobe({
         scratch.y = ((positions[offset + 1] as number) + (positions[offset + 4] as number) * dtSeconds) * 1000;
         scratch.z = ((positions[offset + 2] as number) + (positions[offset + 5] as number) * dtSeconds) * 1000;
         point.position = scratch;
-
-        const isSelected = catalogState.catalogIds[index] === selectedCatalogId;
-        point.pixelSize = isSelected ? 8 : 3;
-        point.color = isSelected ? selectedColor : normalColor;
       }
+
+      /*
+       * Size and colour are NOT written here.
+       *
+       * They used to be, which meant 16,655 `pixelSize` writes plus 16,655 `color`
+       * writes every frame to restate values that change only when the selection does —
+       * and each write dirties the collection for the next update pass. Two properties
+       * that change once a minute were costing more per frame than the position that
+       * changes every frame. They now live in the effect below, keyed on the selection
+       * that is the only thing that alters them.
+       */
 
       viewer.scene.requestRender();
       frame = requestAnimationFrame(render);
@@ -386,7 +456,47 @@ export function SatelliteGlobe({
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [globeReady, catalogState, selectedCatalogId, live]);
+    // `selectedCatalogId` is deliberately absent: this loop no longer draws the
+    // selection, and leaving it here would tear down and rebuild the whole frame loop
+    // every time a user clicked a different satellite.
+  }, [globeReady, catalogState, live, pointerClass, frameIntervalMs]);
+
+  /*
+   * How the selected object is drawn — the only two point properties that are not
+   * position, moved out of the frame loop and keyed on the thing that changes them.
+   *
+   * Runs on a rebuilt catalog and on a changed pointer class as well as on selection,
+   * because both leave every point needing its size restated. It depends on
+   * `catalogState.catalogIds` rather than `catalogState`, which is a reference the
+   * worker hook holds steady between rebuilds — depending on the whole state would run
+   * this once per propagation tick and put the cost straight back.
+   */
+  const catalogIds = catalogState.status === "ready" ? catalogState.catalogIds : undefined;
+  useEffect(() => {
+    const Cesium = cesiumRef.current;
+    const points = pointsRef.current;
+    const viewer = viewerRef.current;
+    if (Cesium === null || points === null || viewer === null || catalogIds === undefined) return;
+    // The build effect and this one both run on a catalog change, in declaration order,
+    // but a mid-load state can leave the collection short. Trust the collection's length.
+    if (points.length !== catalogIds.length) return;
+
+    const selectedColor = Cesium.Color.fromCssColorString("#ffcc55");
+    const normalColor = Cesium.Color.fromCssColorString("#8ecbff").withAlpha(0.85);
+    const size = POINT_SIZE[pointerClass];
+    const selectedSize = SELECTED_POINT_SIZE[pointerClass];
+
+    for (let index = 0; index < catalogIds.length; index += 1) {
+      const point = points.get(index);
+      const isSelected = catalogIds[index] === selectedCatalogId;
+      point.pixelSize = isSelected ? selectedSize : size;
+      point.color = isSelected ? selectedColor : normalColor;
+    }
+
+    // The frame loop requests a render only while it is running; this must not depend
+    // on that to become visible.
+    viewer.scene.requestRender();
+  }, [globeReady, catalogIds, selectedCatalogId, pointerClass]);
 
   // Ground track + footprint for the selected object.
   useEffect(() => {

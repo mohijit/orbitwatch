@@ -7,6 +7,18 @@ import { defineConfig, devices } from "@playwright/test";
  * pipelines differ, and the Cesium asset path is exactly the kind of thing that can
  * work in dev and break in production.
  */
+/**
+ * Headless Chromium has no GPU, so WebGL falls back to SwiftShader. These flags make
+ * that fallback available rather than failing outright, which is what lets a globe
+ * actually render in CI.
+ */
+const SWIFTSHADER_ARGS = [
+  "--use-gl=angle",
+  "--use-angle=swiftshader",
+  "--enable-unsafe-swiftshader",
+  "--ignore-gpu-blocklist",
+];
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -35,19 +47,45 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      /*
+       * Everything EXCEPT the mobile specs.
+       *
+       * Without this the desktop project also picks up `mobile-layout.spec.ts` and runs
+       * it at 1280x720 with a mouse, where a tab bar is a vertical rail and the sheet
+       * does not exist — so all eight fail, describing a layout they were never about.
+       * The two projects partition the suite: `grep` on one, `grepInvert` on the other.
+       */
+      grepInvert: /@mobile/,
       use: {
         ...devices["Desktop Chrome"],
-        launchOptions: {
-          // Headless Chromium has no GPU, so WebGL falls back to SwiftShader. These
-          // flags make that fallback available rather than failing outright, which is
-          // what lets a globe actually render in CI.
-          args: [
-            "--use-gl=angle",
-            "--use-angle=swiftshader",
-            "--enable-unsafe-swiftshader",
-            "--ignore-gpu-blocklist",
-          ],
-        },
+        launchOptions: { args: SWIFTSHADER_ARGS },
+      },
+    },
+    /**
+     * The same build, on a phone-shaped viewport with touch input.
+     *
+     * A SUBSET, NOT THE WHOLE SUITE
+     * The desktop project takes about seven minutes at `workers: 1`, and running all of
+     * it twice would not fit the CI budget. This project runs only what is tagged
+     * `@mobile`: the layout and touch behaviour that genuinely differs. Everything else
+     * — orbital maths, provider handling, offline behaviour — is viewport-independent
+     * and is already covered once.
+     *
+     * WHAT IT CANNOT TELL US
+     * A device descriptor sets a viewport, a user agent and `hasTouch`. It does not give
+     * us a phone: this is still desktop Chromium on SwiftShader, so it verifies that the
+     * layout fits and that a tap selects the right object, and says nothing at all about
+     * frame rate or thermals. Those are measured on real hardware and recorded in
+     * `docs/adr/0006-mobile-web-performance.md`.
+     */
+    {
+      name: "mobile-chromium",
+      grep: /@mobile/,
+      use: {
+        // Pixel 7: 412x915 at DPR 2.625, `hasTouch` and `isMobile` — and `isMobile`
+        // is Chromium-only, which is the browser this suite runs.
+        ...devices["Pixel 7"],
+        launchOptions: { args: SWIFTSHADER_ARGS },
       },
     },
   ],

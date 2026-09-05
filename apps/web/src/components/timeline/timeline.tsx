@@ -69,8 +69,27 @@ export function Timeline({ time, mode, onChange }: TimelineProps) {
     }, SCRUB_DEBOUNCE_MS);
   };
 
+  /*
+   * The scrubber is a disclosure on a narrow screen, and always present on a wide one.
+   *
+   * A 48-hour range across ~350 pixels is roughly eight minutes per pixel — a precision
+   * control, and a thumb is the least precise pointer there is. On a phone it also sits
+   * in the single most valuable strip of screen, permanently, to serve an action almost
+   * nobody takes. What people do read constantly is which instant is on screen and
+   * whether it is live, so that stays; the control that changes it is one tap away.
+   *
+   * SIMULATION forces it open regardless. A user who has left live time must always be
+   * able to see the way back, and hiding "Return to live" behind a disclosure would
+   * strand them in a state they may not have entered deliberately.
+   *
+   * Both parts stay in the DOM on a wide screen, so this is presentation, not a second
+   * component: the CSS decides which of the two arrangements applies.
+   */
+  const [scrubOpen, setScrubOpen] = useState(false);
+  const controlsOpen = scrubOpen || mode === "simulation";
+
   return (
-    <div className="timeline" data-testid="timeline">
+    <div className="timeline" data-testid="timeline" data-controls={controlsOpen ? "open" : "closed"}>
       <div className="timeline__mode" data-testid="timeline-mode">
         {mode === "live" ? (
           <span className="timeline__live-badge">LIVE</span>
@@ -86,28 +105,40 @@ export function Timeline({ time, mode, onChange }: TimelineProps) {
             &mdash;
           </span>
         )}
+
+        <button
+          type="button"
+          className="timeline__disclosure"
+          aria-expanded={controlsOpen}
+          onClick={() => setScrubOpen((open) => !open)}
+          data-testid="timeline-disclosure"
+        >
+          {controlsOpen ? "Hide time controls" : "Change time"}
+        </button>
       </div>
 
-      <input
-        type="range"
-        className="timeline__scrubber"
-        min={0}
-        max={1}
-        step={0.001}
-        value={sliderValue}
-        aria-label="Scrub time"
-        onChange={(event) => scrub(Number(event.target.value))}
-      />
+      <div className="timeline__controls">
+        <input
+          type="range"
+          className="timeline__scrubber"
+          min={0}
+          max={1}
+          step={0.001}
+          value={sliderValue}
+          aria-label="Scrub time"
+          onChange={(event) => scrub(Number(event.target.value))}
+        />
 
-      <button
-        type="button"
-        className="timeline__live-button"
-        onClick={returnToLive}
-        disabled={mode === "live"}
-        data-testid="return-to-live"
-      >
-        Return to live
-      </button>
+        <button
+          type="button"
+          className="timeline__live-button"
+          onClick={returnToLive}
+          disabled={mode === "live"}
+          data-testid="return-to-live"
+        >
+          Return to live
+        </button>
+      </div>
     </div>
   );
 }

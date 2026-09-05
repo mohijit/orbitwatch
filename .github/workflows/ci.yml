@@ -119,6 +119,12 @@ jobs:
   #
   # Sharding is by file (the suite is not fullyParallel), and the slowest single file is
   # ~10 minutes, so no shard can finish much faster than that however many are added.
+  #
+  # Two projects run here, not one: `chromium` at desktop size, and `mobile-chromium` on
+  # a Pixel 7 viewport with touch. No `--project` flag, so the shards are drawn from both
+  # — and the mobile project carries a `grep` for `@mobile`, so it contributes only the
+  # handful of tests where the viewport actually changes the answer rather than a second
+  # full pass over orbital maths that has no viewport at all.
   browser:
     name: Playwright (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest

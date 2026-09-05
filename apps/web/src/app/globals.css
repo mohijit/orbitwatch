@@ -28,7 +28,18 @@ html, body {
 .shell__bar {
   position: absolute;
   top: 0; left: 0; right: 0;
-  z-index: 10;
+  /*
+   * Above every overlay, because two things inside it are not header-shaped.
+   *
+   * The search dialog and the observer popover are rendered as children of this bar
+   * rather than portalled, so their own z-index is confined to whatever stacking
+   * context this element establishes. At 10 they tied with the panels and lost on DOM
+   * order — which on a narrow screen meant the bottom sheet painted straight over the
+   * bottom half of a full-height search dialog. Nothing in the bar overlaps anything
+   * below it, so lifting the whole context costs nothing and stops a modal being
+   * covered by the page it is modal over.
+   */
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -859,3 +870,420 @@ html, body {
 }
 .offline-banner--empty .offline-banner__headline { color: #f87171; }
 .offline-banner--empty .offline-banner__detail { color: #eec6c6; }
+
+/* ── M8.5: the sheet wrapper, and the narrow-viewport layout ───────────────────── */
+
+/*
+ * WIDE: an invisible box the size of the shell.
+ *
+ * The telemetry panel and the panel stack used to be siblings positioned against
+ * `.shell`. They now live inside this wrapper, which is given the same geometry so
+ * their `top`/`right`/`left` offsets resolve to exactly the same place — the wide
+ * layout is unchanged, and there is one DOM for both arrangements rather than two
+ * component trees and two accessibility trees.
+ *
+ * Click-through, or a full-screen transparent box over the globe would swallow every
+ * drag; the cards inside take their pointer events back.
+ */
+.bottom-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+.bottom-sheet > .bottom-sheet__body { display: contents; }
+.bottom-sheet__handle { display: none; }
+.telemetry-panel,
+.panel-stack { pointer-events: auto; }
+
+/* The scrubber is always present on a wide screen; `contents` keeps its children
+   direct flex items of `.timeline`, which is what `align-self` on the button needs. */
+.timeline__controls { display: contents; }
+.timeline__disclosure { display: none; }
+
+/*
+ * The SGP4 disclaimer does not intercept clicks.
+ *
+ * It is a full-width strip painted above the globe at z-index 10, so every click in the
+ * bottom 3rem of the page was landing on a paragraph — including on panel rows that
+ * were plainly visible underneath it. It is text to read, not a surface to hit.
+ */
+.shell__note { pointer-events: none; }
+.shell__note a { pointer-events: auto; color: var(--ow-accent); }
+
+/* ── narrow viewport: globe, sheet, tab bar ───────────────────────────────────── */
+
+/*
+ * Width, not `pointer: coarse` — the constraint is horizontal space, so a narrow
+ * desktop window gets the same treatment, and an emulated viewport can exercise it.
+ * Kept in step with NARROW_VIEWPORT in `hooks/use-media-query.ts`.
+ */
+@media (max-width: 44rem) {
+  /* Header: one row, and everything in it on screen. */
+  .shell__bar {
+    gap: 0.4rem;
+    padding: 0.5rem 0.6rem;
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+  .shell__brand { flex: none; font-size: 0.72rem; letter-spacing: 0.06em; }
+  .command-trigger { flex: none; padding: 0.3rem 0.5rem; }
+
+  /* The coordinates give way; everything either side of them holds its width. */
+  .observer-panel { flex: 1 1 auto; min-width: 0; }
+  .observer-panel__summary { width: 100%; padding: 0.25rem 0.4rem; }
+  .observer-panel__label { font-size: 0.55rem; }
+  .observer-panel__value {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /*
+   * The sky reading is dropped from the header, not from the app: "Visible tonight"
+   * states the darkness window, and the observer popover states the sun altitude. A
+   * header with no room for the catalog count is worse than one without a second
+   * reading of the same fact.
+   */
+  .observer-panel__sky { display: none; }
+  .shell__badge { flex: none; font-size: 0.6rem; padding: 0.2rem 0.45rem; }
+
+  /*
+   * A full-width card rather than a 21rem box hanging off a trigger that sits two
+   * thirds of the way across the screen — which put most of it past the right edge.
+   * Fixed, so it is measured against the viewport and not against a header that is
+   * only 3rem tall.
+   */
+  .observer-panel__body {
+    position: fixed;
+    top: 3.4rem;
+    left: 0.6rem;
+    right: 0.6rem;
+    width: auto;
+    max-height: 70dvh;
+    overflow-y: auto;
+  }
+
+  /*
+   * Timeline: a status line under the header, not a scrubber across the bottom.
+   *
+   * The clock and the LIVE/SIMULATION state are read constantly and carry the central
+   * claim about which instant is on screen, so they stay. The 48-hour scrubber — about
+   * eight minutes per pixel — goes behind a disclosure, because it is a precision
+   * control and a thumb is the least precise pointer there is.
+   *
+   * The offline banner occupies this same strip when it appears. Rather than let one
+   * paint over the other, the sibling combinator moves everything below it down: the
+   * banner renders `null` when there is nothing to say, so its mere presence in the
+   * document is the condition, and no JavaScript needs to know about it.
+   */
+  .timeline {
+    top: 3.3rem;
+    bottom: auto;
+    left: 0.6rem;
+    right: 0.6rem;
+    width: auto;
+    transform: none;
+    padding: 0.35rem 0.6rem;
+    gap: 0.35rem;
+  }
+  .timeline__mode { flex-wrap: wrap; gap: 0.25rem 0.6rem; }
+  .timeline__clock { font-size: 0.62rem; }
+  .timeline__disclosure {
+    display: inline-block;
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--ow-border);
+    border-radius: 6px;
+    color: var(--ow-accent);
+    font: inherit;
+    font-size: 0.62rem;
+    padding: 0.15rem 0.5rem;
+    cursor: pointer;
+  }
+  .timeline[data-controls="closed"] .timeline__controls { display: none; }
+
+  /* Clear of the header and the timeline strip. */
+  .shell__picking { top: 7.2rem; }
+
+  /* Everything in the top strip steps down when the offline banner is present. */
+  .offline-banner ~ .timeline { top: 7.4rem; }
+  .offline-banner ~ .shell__picking { top: 11.3rem; }
+
+  /*
+   * THE SHEET.
+   *
+   * Bottom-anchored and never taller than "most of the screen": the globe is the
+   * product, and a panel that covers it entirely is a different app. It stops above the
+   * disclaimer, which stops above the tab bar, so all three are visible at once rather
+   * than stacked on top of one another.
+   */
+  .bottom-sheet {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: calc(5.7rem + env(safe-area-inset-bottom));
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    pointer-events: auto;
+    background: var(--ow-surface);
+    border-top: 1px solid var(--ow-border);
+    border-radius: 14px 14px 0 0;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+    transition: height 160ms ease;
+  }
+  .bottom-sheet--peek { height: 9rem; }
+  .bottom-sheet--half { height: 45dvh; }
+  .bottom-sheet--full { height: calc(100dvh - 12rem); }
+
+  /*
+   * The handle is a button first and a drag target second. Full width, so it is a large
+   * target despite being short, and `touch-action: none` because a vertical drag here
+   * is the gesture rather than a scroll of whatever is underneath.
+   */
+  .bottom-sheet__handle {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 34px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .bottom-sheet__grip {
+    display: block;
+    width: 2.5rem;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--ow-border);
+  }
+  .bottom-sheet__handle:focus-visible { outline: 2px solid var(--ow-accent); outline-offset: -4px; }
+
+  .bottom-sheet > .bottom-sheet__body {
+    display: grid;
+    align-content: start;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* Stops a scroll that reaches the end of the sheet from turning into a pull to
+       refresh, which would discard the page the sheet is describing. */
+    overscroll-behavior: contain;
+    padding: 0 0.75rem 0.75rem;
+  }
+
+  /*
+   * Inside the sheet the cards stop being cards. They already sit on a surface with a
+   * border and a blur; repeating that per panel would be three nested boxes on a 390px
+   * screen.
+   */
+  .telemetry-panel,
+  .panel-stack {
+    position: static;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    background: none;
+    border: none;
+    border-radius: 0;
+    backdrop-filter: none;
+    padding: 0;
+  }
+  .panel-stack__panel {
+    background: none;
+    border: none;
+    border-radius: 0;
+    backdrop-filter: none;
+    padding: 0;
+  }
+  /* One rule instead of a border on each: the only place a divider is needed is
+     between a selected object and the panel below it. */
+  .telemetry-panel + .panel-stack {
+    border-top: 1px solid var(--ow-border);
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+  }
+
+  /*
+   * THE TAB BAR.
+   *
+   * The same rail, laid on its side at the bottom of the screen, because every control
+   * in this app was in the top 64px — the least reachable part of a phone held in one
+   * hand.
+   */
+  .panel-rail {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 14;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 0;
+    border: none;
+    border-top: 1px solid var(--ow-border);
+    border-radius: 0;
+    padding: 0 0.2rem;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(7, 11, 20, 0.94);
+  }
+  .panel-rail__button {
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.1rem;
+    min-height: 44px;
+    padding: 0.35rem 0.15rem;
+    text-align: center;
+    white-space: normal;
+  }
+  .panel-rail__glyph { font-size: 0.95rem; }
+  .panel-rail__label { font-size: 0.55rem; line-height: 1.1; letter-spacing: 0.01em; }
+  /*
+   * No "hide all" here. Collapsing the sheet is already how you put panels away, and a
+   * control that removed the tab bar would take the only navigation with it — the exact
+   * trap `panel-rail__restore` exists to avoid, reintroduced in a worse place.
+   */
+  .panel-rail__hide { display: none; }
+  /*
+   * When the rail IS hidden, the way back moves to where the rail was rather than
+   * staying at the top left, where it would sit under the timeline strip and look like
+   * part of it. Bottom right, in thumb reach, which is where the controls it restores
+   * live.
+   */
+  .panel-rail__restore {
+    position: fixed;
+    top: auto;
+    left: auto;
+    right: 0.75rem;
+    bottom: calc(0.6rem + env(safe-area-inset-bottom));
+    z-index: 14;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /*
+   * The disclaimer keeps its own strip above the tab bar rather than being covered by
+   * the sheet. It is the central honesty claim; one line is the most that fits, so the
+   * rest lives behind the link.
+   */
+  .shell__note {
+    bottom: calc(0.3rem + env(safe-area-inset-bottom));
+    padding: 0.3rem 0.75rem;
+    font-size: 0.58rem;
+    line-height: 1.35;
+    background: rgba(7, 11, 20, 0.86);
+  }
+  /* Clears the tab bar when there is one. Same sibling trick as the offline banner:
+     the rail renders as a lone restore button when hidden, so its presence is the
+     condition and nothing has to be told about it. */
+  .panel-rail ~ .shell__note { bottom: calc(3.4rem + env(safe-area-inset-bottom)); }
+
+  /*
+   * Search fills the screen, with the input pinned above the results.
+   *
+   * Under the old 12vh offset the virtual keyboard covered the list the user was typing
+   * to filter. Paired with `interactiveWidget: "resizes-content"` in `layout.tsx`,
+   * `100dvh` here means the space the keyboard has actually left.
+   */
+  .command-palette-overlay { padding-top: 0; align-items: stretch; }
+  .command-palette {
+    width: 100%;
+    max-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  .command-palette__results { flex: 1 1 auto; max-height: none; }
+
+  .sky-chart__svg { max-width: 100%; }
+}
+
+/*
+ * ── touch input ───────────────────────────────────────────────────────────────────
+ *
+ * A different question from screen width: a 24-pixel control is unreliable under a
+ * fingertip on any size of display, and 44 is the figure both platform guidelines
+ * settle on. Sized rather than padded, so nothing reflows around it.
+ */
+@media (pointer: coarse) {
+  .panel-rail__button,
+  .panel-rail__hide,
+  .panel-rail__restore,
+  .timeline__live-button,
+  .timeline__disclosure,
+  .visible-tonight__refresh,
+  .observer-panel__summary,
+  .observer-panel__actions button,
+  .observer-panel__manual button,
+  .command-trigger,
+  .command-palette__result,
+  .pass-list__row {
+    min-height: 44px;
+  }
+  .telemetry-panel__close { min-height: 44px; min-width: 44px; }
+  /* A keyboard shortcut is not an affordance on a device with no keyboard. */
+  .command-trigger kbd { display: none; }
+  /* Comfortably above a fingertip, which is what makes a list scannable rather than a
+     set of near-misses. */
+  .visible-tonight__item { padding: 0.5rem 0; }
+}
+
+/* ── device benchmark (not a product surface) ─────────────────────────────────── */
+
+.device-bench { position: relative; min-height: 100dvh; }
+/* Behind the panel and faint: the globe has to be rendering for the measurement to
+   mean anything, but nobody is looking at it. */
+.device-bench__globe { position: absolute; inset: 0; opacity: 0.25; }
+.device-bench__panel {
+  position: relative;
+  z-index: 2;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+}
+.device-bench__title { font-size: 1.05rem; margin: 0 0 0.4rem; }
+.device-bench__status { margin: 0 0 0.75rem; font-size: 0.8rem; color: var(--ow-text-muted); }
+.device-bench__run {
+  min-height: 44px;
+  padding: 0 1.2rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ow-bg);
+  background: var(--ow-accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.device-bench__run:disabled { opacity: 0.5; cursor: default; }
+.device-bench__table {
+  width: 100%;
+  margin-top: 1rem;
+  border-collapse: collapse;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+.device-bench__table th,
+.device-bench__table td {
+  text-align: right;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--ow-border);
+}
+.device-bench__table th { color: var(--ow-text-muted); font-weight: 600; font-size: 0.65rem; }
+.device-bench__table th:first-child,
+.device-bench__table td:first-child { text-align: left; }
+.device-bench__note {
+  margin-top: 1rem;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--ow-text-muted);
+}

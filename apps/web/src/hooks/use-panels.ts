@@ -29,9 +29,29 @@ export type PanelId = (typeof PANEL_IDS)[number];
 
 export interface PanelState {
   readonly open: Readonly<Record<PanelId, boolean>>;
+  /**
+   * The one panel a single-column layout should show.
+   *
+   * Desktop ignores this entirely and renders every open panel side by side — the
+   * argument above for independent toggles still holds where there is room for them.
+   * A phone has one column, so it needs an answer to "which of these is in front",
+   * and the most recently opened panel is that answer: it is the one the user just
+   * asked for. Falls back to another still-open panel when that one is closed, and to
+   * `undefined` only when nothing is open.
+   */
+  readonly activePanel: PanelId | undefined;
   /** False when the user has put the whole rail away. */
   readonly railVisible: boolean;
   readonly toggle: (id: PanelId) => void;
+  /**
+   * Move an already-open panel to the front without changing what is open.
+   *
+   * A single-column layout needs this and a wide one does not, which is exactly why it
+   * is separate from `toggle`. In a tab bar, a panel can be open and behind another,
+   * and tapping its tab plainly means "show me that one" — routing it through `toggle`
+   * would close it instead, which is the opposite of what was asked for.
+   */
+  readonly bringToFront: (id: PanelId) => void;
   readonly setRailVisible: (visible: boolean) => void;
 }
 
@@ -81,6 +101,16 @@ function readStored(): { open: Record<PanelId, boolean>; railVisible: boolean } 
   }
 }
 
+/** The first open panel in rail order, so the fallback is stable rather than arbitrary. */
+function firstOpen(open: Readonly<Record<PanelId, boolean>>): PanelId | undefined {
+  return PANEL_IDS.find((id) => open[id]);
+}
+
+interface PanelLayout {
+  readonly open: Record<PanelId, boolean>;
+  readonly activePanel: PanelId | undefined;
+}
+
 export function usePanels(): PanelState {
   /*
    * Started from the defaults, not from storage.
@@ -91,13 +121,30 @@ export function usePanels(): PanelState {
    * mount instead — one frame of the default layout is a far smaller cost than a
    * hydration error.
    */
-  const [open, setOpen] = useState<Record<PanelId, boolean>>(() => ({ ...DEFAULT_OPEN }));
+  /*
+   * `open` and `activePanel` are one piece of state, not two.
+   *
+   * They are derived from the same event and read in the same render — the panel in
+   * front must be one of the open ones — so holding them separately would mean a
+   * transition where the pair disagreed and the sheet rendered a panel the tab bar said
+   * was closed. It also keeps the updater pure: the alternative was calling
+   * `setActivePanel` from inside the `setOpen` updater, which React is entitled to run
+   * twice.
+   */
+  const [layout, setLayout] = useState<PanelLayout>(() => ({
+    open: { ...DEFAULT_OPEN },
+    activePanel: firstOpen(DEFAULT_OPEN),
+  }));
+  const { open, activePanel } = layout;
   const [railVisible, setRail] = useState(true);
   const [restored, setRestored] = useState(false);
 
   useEffect(() => {
     const stored = readStored();
-    setOpen(stored.open);
+    // Which panel was in front is deliberately NOT persisted. It is a "where am I right
+    // now" detail, not a layout choice, and restoring it would mean a phone reopening on
+    // whatever happened to be last tapped days ago rather than on its default.
+    setLayout({ open: stored.open, activePanel: firstOpen(stored.open) });
     setRail(stored.railVisible);
     setRestored(true);
   }, []);
@@ -115,12 +162,30 @@ export function usePanels(): PanelState {
   }, [open, railVisible, restored]);
 
   const toggle = useCallback((id: PanelId) => {
-    setOpen((current) => ({ ...current, [id]: !current[id] }));
+    setLayout((current) => {
+      const open = { ...current.open, [id]: !current.open[id] };
+      // Just opened: it is what the user asked for, so it goes in front. Just closed:
+      // only the panel that WAS in front needs replacing, and the rail order gives a
+      // stable answer rather than an arbitrary one.
+      const activePanel = open[id]
+        ? id
+        : current.activePanel === id
+          ? firstOpen(open)
+          : current.activePanel;
+      return { open, activePanel };
+    });
+  }, []);
+
+  const bringToFront = useCallback((id: PanelId) => {
+    // Only for a panel that is already open. Promoting a closed one would be `toggle`
+    // wearing a different name, and would let a caller open something without the tab
+    // state that says so.
+    setLayout((current) => (current.open[id] ? { ...current, activePanel: id } : current));
   }, []);
 
   const setRailVisible = useCallback((visible: boolean) => {
     setRail(visible);
   }, []);
 
-  return { open, railVisible, toggle, setRailVisible };
+  return { open, activePanel, railVisible, toggle, bringToFront, setRailVisible };
 }
