@@ -169,6 +169,16 @@ export function DeviceBench() {
                 <th scope="col">Median</th>
                 <th scope="col">95th</th>
                 <th scope="col">FPS</th>
+                {/*
+                  The column that actually separates the two variants.
+
+                  Frame time saturates at the refresh rate: once the loop fits inside
+                  the budget, every frame is 16.7ms whether the work took 2ms or 12ms,
+                  and both variants report 60fps. This is the work itself, measured
+                  inside the loop, and it keeps going down after frame time has stopped
+                  being able to show it.
+                */}
+                <th scope="col">Loop</th>
               </tr>
             </thead>
             <tbody>
@@ -179,6 +189,7 @@ export function DeviceBench() {
                   <td>{result.medianFrameMs.toFixed(1)} ms</td>
                   <td>{result.p95FrameMs.toFixed(1)} ms</td>
                   <td>{result.meanFps.toFixed(0)}</td>
+                  <td>{result.medianUpdateMs.toFixed(2)} ms</td>
                 </tr>
               ))}
             </tbody>
@@ -189,6 +200,11 @@ export function DeviceBench() {
           Frame time, not smoothed frame rate: a mean hides the late frame that is what a
           stutter actually is. &ldquo;pos + style&rdquo; restates every point&rsquo;s size
           and colour each frame, which is what the app did before this milestone.
+          <br />
+          <strong>Loop</strong> is the work itself, timed inside the frame. Read that
+          column to compare the two variants: once the loop fits inside the refresh
+          budget, frame time pins to the display and reports 60&nbsp;fps either way, so
+          it can no longer tell them apart.
         </p>
       </div>
     </div>
