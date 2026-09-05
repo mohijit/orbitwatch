@@ -11,6 +11,7 @@ import {
   type Database,
 } from "@orbitwatch/database";
 
+import { loadServerConfig } from "./config.js";
 import { buildServer } from "./server.js";
 
 /**
@@ -45,13 +46,12 @@ function readEnvFile(path: string): Record<string, string> {
   }
   return env;
 }
-
 async function main(): Promise<void> {
   const repoRoot = resolve(process.cwd(), "..", "..");
   const env = { ...readEnvFile(resolve(repoRoot, ".env.local")), ...process.env };
 
-  const port = Number(env["PORT"] ?? 3333);
-  const host = env["HOST"] ?? "0.0.0.0";
+  const config = loadServerConfig(env);
+  const { PORT: port, HOST: host } = config;
 
   let database: Database;
   if (hasDatabaseConfig(env)) {
@@ -75,35 +75,78 @@ async function main(): Promise<void> {
     `  cache    : ${cache.hasSharedLayer ? "shared (Upstash) + in-process" : "in-process only"}`,
   );
 
-  const corsOrigins = (env["CORS_ORIGINS"] ?? "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
-
   const app = await buildServer({
     database,
     cache,
     version: env["npm_package_version"] ?? "0.0.0",
     logger: true,
-    ...(corsOrigins.length > 0 ? { corsOrigins } : {}),
-    ...(env["RATE_LIMIT_PER_MINUTE"] === undefined
+    ...(config.CORS_ORIGINS.length > 0 ? { corsOrigins: config.CORS_ORIGINS } : {}),
+    ...(config.RATE_LIMIT_PER_MINUTE === undefined
       ? {}
-      : { rateLimitPerMinute: Number(env["RATE_LIMIT_PER_MINUTE"]) }),
+      : { rateLimitPerMinute: config.RATE_LIMIT_PER_MINUTE }),
   });
 
   /**
-   * Close connections before exiting.
+   * Close connections before exiting, but never wait forever to do it.
    *
-   * Without this a redeploy can leave pooled Postgres connections held until they time
-   * out server-side, and the free tier's connection ceiling is low enough that a few
-   * rapid restarts would exhaust it.
+   * WHY THE DEADLINE IS THE IMPORTANT PART
+   * Closing matters: without it a redeploy leaves pooled Postgres connections held
+   * until they time out server-side, and the free tier's connection ceiling is low
+   * enough that a few rapid restarts exhaust it.
+   *
+   * But an unbounded close is worse than no close. This used to await each shutdown in
+   * turn, and `sql.end()` does not resolve at all when the database has stopped
+   * answering -- so Ctrl+C against an unreachable database printed "shutting down" and
+   * then hung indefinitely, still holding the port. Measured by sending a real console
+   * Ctrl+C event: the process was still listening 25 seconds later. From the outside
+   * that looks exactly like Ctrl+C not working, and the natural next move is to kill
+   * the window -- which strands precisely the connections this was written to release.
+   *
+   * So the cleanup races a deadline and the deadline always wins eventually. Losing a
+   * graceful close costs connections the server will reclaim on its own timeout; not
+   * exiting costs the port and the developer's trust in the signal.
    */
+  const SHUTDOWN_DEADLINE_MS = 5_000;
+
+  let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
+    /*
+     * A second signal exits immediately. Anyone pressing Ctrl+C twice has decided they
+     * are done waiting, and the right answer is to go, not to explain.
+     */
+    if (shuttingDown) {
+      console.log(`${signal} again - exiting now.`);
+      process.exit(130);
+    }
+    shuttingDown = true;
     console.log(`\n${signal} received, shutting down.`);
+
+    // unref, so a clean and fast close is not held open by its own timer.
+    const deadline = new Promise<"timeout">((resolve) => {
+      setTimeout(() => {
+        resolve("timeout");
+      }, SHUTDOWN_DEADLINE_MS).unref();
+    });
+
     try {
-      await app.close();
-      await database.close();
-      await cache.close();
+      const outcome = await Promise.race([
+        (async () => {
+          await app.close();
+          await database.close();
+          await cache.close();
+          return "closed" as const;
+        })(),
+        deadline,
+      ]);
+
+      if (outcome === "timeout") {
+        console.warn(
+          `Connections did not close within ${String(SHUTDOWN_DEADLINE_MS)}ms - exiting anyway.`,
+        );
+      }
+    } catch (error) {
+      // A close that throws is still a close we are finished with.
+      console.warn("Error while closing:", error instanceof Error ? error.message : error);
     } finally {
       process.exit(0);
     }

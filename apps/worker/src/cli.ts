@@ -17,7 +17,6 @@
  * Prints no credentials. On a public repository, CI logs are public.
  */
 
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
@@ -30,29 +29,9 @@ import {
 import { CELESTRAK_GROUPS, FetchGuard, GuardedHttpClient } from "@orbitwatch/providers";
 import type { CelestrakGroup } from "@orbitwatch/providers";
 
+import { readEnvFile } from "./env-file.js";
 import { ingestOrbitalElements, type IngestionResult } from "./ingest-elements.js";
 
-function readEnvFile(path: string): Record<string, string> {
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return {};
-  }
-
-  const env: Record<string, string> = {};
-  for (const line of raw.split(/\r?\n/)) {
-    if (/^\s*#/.test(line)) continue;
-    const match = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/.exec(line);
-    if (match?.[1] === undefined) continue;
-    const value = (match[2] ?? "")
-      .trim()
-      .replace(/^"(.*)"$/s, "$1")
-      .replace(/^'(.*)'$/s, "$1");
-    env[match[1]] = value;
-  }
-  return env;
-}
 
 /** Parse `--group <name>`, defaulting to the catalog backbone. */
 function parseGroup(argv: readonly string[]): CelestrakGroup {

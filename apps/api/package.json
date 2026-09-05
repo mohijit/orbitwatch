@@ -8,8 +8,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "vitest run",
-    "start": "tsx src/main.ts",
-    "dev": "tsx watch src/main.ts",
+    "start": "node --import tsx src/main.ts",
+    "dev": "node --watch --import tsx src/main.ts",
+    "seed": "node --import tsx src/seed-dev.ts",
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@orbitwatch/eslint-config": "workspace:*",
     "@orbitwatch/typescript-config": "workspace:*",
+    "@orbitwatch/worker": "workspace:*",
     "@types/node": "^24.3.0",
     "eslint": "^9.36.0",
     "rimraf": "^6.0.1",

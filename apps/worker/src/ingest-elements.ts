@@ -7,6 +7,7 @@ import {
   normalizeCatalogId,
   parseOmm,
   parseUtcTimestamp,
+  type CatalogId,
   type OMMJsonObject,
 } from "@orbitwatch/orbit-core";
 import {
@@ -69,7 +70,7 @@ export interface IngestionLogger {
   error(message: string, fields?: Record<string, unknown>): void;
 }
 
-const NULL_LOGGER: IngestionLogger = {
+export const NULL_LOGGER: IngestionLogger = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
@@ -79,7 +80,7 @@ const NULL_LOGGER: IngestionLogger = {
  * A full catalog download can legitimately take a while. The lease must outlive it,
  * but not by so much that a crashed worker blocks the next scheduled run.
  */
-const DEFAULT_LEASE_TTL_SECONDS = 600;
+export const DEFAULT_LEASE_TTL_SECONDS = 600;
 
 /** How many rejected records to keep in the error summary before truncating. */
 const MAX_REPORTED_REJECTIONS = 5;
@@ -219,6 +220,37 @@ export async function ingestOrbitalElements(
     await ensureSatellitesExist(database, records, provider);
 
     const stored = await database.elements.insertMany(normalized);
+
+    // Record group membership when the request was for a named group.
+    //
+    // This is the only place the membership is knowable: the response IS the list, and
+    // nothing in an OMM record says which groups its object belongs to. It matters
+    // because `visual` is CelesTrak's curated set of objects bright enough to see with
+    // the naked eye — the closest thing a public catalog offers to the brightness data
+    // GP elements omit entirely. Without it, "Visible Tonight" degenerates into every
+    // sunlit object above the horizon, which measured at 3,614 passes in one night.
+    //
+    // Stamped with the fetch time rather than now(), so a slow or replayed run does not
+    // claim fresher knowledge of the membership than it actually has.
+    if (query.kind === "GROUP") {
+      const memberIds = records
+        .map((record) => normalizeCatalogId(record["NORAD_CAT_ID"]))
+        .filter((catalogId): catalogId is CatalogId => catalogId !== undefined);
+
+      const membership = await database.groups.record(
+        provider,
+        query.value,
+        memberIds,
+        response.fetchedAt,
+      );
+      logger.info("Recorded group membership", {
+        provider,
+        group: query.value,
+        members: memberIds.length,
+        added: membership.added,
+        refreshed: membership.refreshed,
+      });
+    }
 
     const totalRejected = rejected.length + normalizationFailures.length;
     const status = totalRejected > 0 ? "partial" : "success";
@@ -422,7 +454,7 @@ function skipped(
   };
 }
 
-function defaultHolder(): string {
+export function defaultHolder(): string {
   return `worker-${process.pid}`;
 }
 

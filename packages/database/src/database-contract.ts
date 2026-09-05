@@ -1,3 +1,5 @@
+import type { CatalogId } from "@orbitwatch/orbit-core";
+
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Database, OrbitalElementRecord, SatelliteRecord } from "./repositories.js";
@@ -697,6 +699,660 @@ export function runDatabaseContractTests(
       it("keeps leases for different resources independent", async () => {
         await db.leases.acquire("celestrak:active", "worker-a", 60);
         expect(await db.leases.acquire("celestrak:satcat", "worker-a", 60)).toBeDefined();
+      });
+    });
+
+    // ── group membership ─────────────────────────────────────────────────────
+
+    describe("satellite groups", () => {
+      beforeEach(async () => {
+        await db.satellites.upsertMany([
+          makeSatellite({ catalogId: "25544" }),
+          makeSatellite({ catalogId: "20580" }),
+          makeSatellite({ catalogId: "39084" }),
+        ]);
+      });
+
+      it("records membership and reads it back", async () => {
+        const result = await db.groups.record(
+          "celestrak-gp",
+          "visual",
+          ["25544", "20580"],
+          at(0),
+        );
+        expect(result).toEqual({ added: 2, refreshed: 0 });
+
+        const members = await db.groups.members("celestrak-gp", "visual");
+        expect(members.map((m) => m.catalogId)).toEqual(["20580", "25544"]);
+      });
+
+      it("refreshes lastSeenAt without moving firstSeenAt", async () => {
+        await db.groups.record("celestrak-gp", "visual", ["25544"], at(0));
+        const second = await db.groups.record("celestrak-gp", "visual", ["25544"], at(3));
+        expect(second).toEqual({ added: 0, refreshed: 1 });
+
+        // firstSeenAt is when membership BEGAN. Moving it forward on every run would
+        // erase the only record of how long an object has been listed.
+        const [member] = await db.groups.members("celestrak-gp", "visual");
+        expect(member?.firstSeenAt.toISOString()).toBe(at(0).toISOString());
+        expect(member?.lastSeenAt.toISOString()).toBe(at(3).toISOString());
+      });
+
+      it("finds objects that have dropped out of the group", async () => {
+        await db.groups.record("celestrak-gp", "visual", ["25544", "20580"], at(0));
+        // The next run lists only one of them: 20580 has left the group.
+        await db.groups.record("celestrak-gp", "visual", ["25544"], at(2));
+
+        // Unfiltered, the departed object is still on record -- that history is the
+        // point of storing lastSeenAt rather than deleting rows.
+        expect(await db.groups.members("celestrak-gp", "visual")).toHaveLength(2);
+
+        // Filtered to the latest run, it is correctly gone. This is what stops a
+        // no-longer-listed object being offered as a naked-eye target.
+        const current = await db.groups.members("celestrak-gp", "visual", {
+          seenSince: at(2),
+        });
+        expect(current.map((m) => m.catalogId)).toEqual(["25544"]);
+      });
+
+      it("keeps groups and providers separate", async () => {
+        await db.groups.record("celestrak-gp", "visual", ["25544"], at(0));
+        await db.groups.record("celestrak-gp", "stations", ["20580"], at(0));
+        await db.groups.record("other-provider", "visual", ["39084"], at(0));
+
+        expect(
+          (await db.groups.members("celestrak-gp", "visual")).map((m) => m.catalogId),
+        ).toEqual(["25544"]);
+        expect(
+          (await db.groups.members("celestrak-gp", "stations")).map((m) => m.catalogId),
+        ).toEqual(["20580"]);
+        expect(
+          (await db.groups.members("other-provider", "visual")).map((m) => m.catalogId),
+        ).toEqual(["39084"]);
+      });
+
+      it("treats an empty membership list as a no-op", async () => {
+        expect(await db.groups.record("celestrak-gp", "visual", [], at(0))).toEqual({
+          added: 0,
+          refreshed: 0,
+        });
+      });
+    });
+
+// ── radio transmitters ───────────────────────────────────────────────────
+
+    describe("radio transmitters", () => {
+      const transmitter = (
+        uuid: string,
+        overrides: Partial<Parameters<typeof db.radio.upsertMany>[0][number]> = {},
+      ) => ({
+        uuid,
+        provider: "satnogs-db",
+        catalogId: "25544",
+        satId: "XSKZ-5603-1870-9019-3066",
+        description: "Mode V APRS",
+        type: "Transceiver",
+        status: "active",
+        alive: true,
+        uplinkLowHz: 145_825_000,
+        uplinkHighHz: undefined,
+        downlinkLowHz: 145_825_000,
+        downlinkHighHz: undefined,
+        mode: "AFSK",
+        uplinkMode: "AFSK",
+        baud: 1200,
+        inverted: false,
+        service: "Amateur",
+        citation: "https://example.invalid/citation",
+        updatedAt: at(-48),
+        retrievedAt: at(-1),
+        ...overrides,
+      });
+
+      it("stores and returns a transmitter for its satellite", async () => {
+        expect(await db.radio.upsertMany([transmitter("a")])).toEqual({
+          inserted: 1,
+          updated: 0,
+        });
+
+        const found = await db.radio.forSatellite("25544" as CatalogId);
+        expect(found).toHaveLength(1);
+        expect(found[0]?.uuid).toBe("a");
+        expect(found[0]?.downlinkLowHz).toBe(145_825_000);
+        // Frequencies must come back as numbers. Postgres returns BIGINT as a string,
+        // and a string here compares wrongly against every threshold downstream.
+        expect(typeof found[0]?.downlinkLowHz).toBe("number");
+        expect(found[0]?.baud).toBe(1200);
+        expect(found[0]?.inverted).toBe(false);
+      });
+
+      it("updates rather than duplicates when the provider republishes one", async () => {
+        await db.radio.upsertMany([transmitter("a")]);
+        expect(
+          await db.radio.upsertMany([transmitter("a", { description: "Mode V APRS (edited)" })]),
+        ).toEqual({ inserted: 0, updated: 1 });
+
+        const found = await db.radio.forSatellite("25544" as CatalogId);
+        expect(found).toHaveLength(1);
+        expect(found[0]?.description).toBe("Mode V APRS (edited)");
+      });
+
+      it("hides dead transmitters by default and returns them on request", async () => {
+        await db.radio.upsertMany([
+          transmitter("alive-one"),
+          transmitter("dead-one", { alive: false, status: "inactive" }),
+        ]);
+
+        // A ground station wants what works now; the dead entry is history, not the
+        // answer — but "this used to transmit on 145.8" is a real question, so it is
+        // retained rather than deleted.
+        expect((await db.radio.forSatellite("25544" as CatalogId)).map((t) => t.uuid)).toEqual([
+          "alive-one",
+        ]);
+        expect(
+          (await db.radio.forSatellite("25544" as CatalogId, { includeDead: true }))
+            .map((t) => t.uuid)
+            .sort(),
+        ).toEqual(["alive-one", "dead-one"]);
+      });
+
+      it("orders by downlink frequency, so a band can be scanned for", async () => {
+        await db.radio.upsertMany([
+          transmitter("high", { downlinkLowHz: 437_550_000 }),
+          transmitter("low", { downlinkLowHz: 145_800_000 }),
+          transmitter("mid", { downlinkLowHz: 435_000_000 }),
+        ]);
+        expect((await db.radio.forSatellite("25544" as CatalogId)).map((t) => t.uuid)).toEqual([
+          "low",
+          "mid",
+          "high",
+        ]);
+      });
+
+      it("keeps a transmitter with no NORAD id rather than rejecting it", async () => {
+        // SatNOGS carries pre-launch payloads and objects CelesTrak has dropped. A
+        // foreign key would fail ingestion on exactly the records a ground station
+        // most wants, so these are stored and simply not joined to a satellite.
+        await db.radio.upsertMany([transmitter("orphan", { catalogId: undefined })]);
+        expect(await db.radio.count()).toBe(1);
+        expect(await db.radio.forSatellite("25544" as CatalogId)).toEqual([]);
+      });
+
+      it("separates transmitters belonging to different objects", async () => {
+        await db.radio.upsertMany([
+          transmitter("iss"),
+          transmitter("other", { catalogId: "39084" }),
+        ]);
+        expect((await db.radio.forSatellite("25544" as CatalogId)).map((t) => t.uuid)).toEqual([
+          "iss",
+        ]);
+        expect((await db.radio.forSatellite("39084" as CatalogId)).map((t) => t.uuid)).toEqual([
+          "other",
+        ]);
+      });
+
+      it("preserves the provider's own updated timestamp, distinct from retrieval", async () => {
+        await db.radio.upsertMany([transmitter("a")]);
+        const found = await db.radio.forSatellite("25544" as CatalogId);
+        // Two different facts, and this product does not conflate them anywhere else
+        // either: when SatNOGS last changed the record, versus when we asked.
+        expect(found[0]?.updatedAt?.toISOString()).toBe(at(-48).toISOString());
+        expect(found[0]?.retrievedAt.toISOString()).toBe(at(-1).toISOString());
+      });
+
+      it("treats an empty list as a no-op", async () => {
+        expect(await db.radio.upsertMany([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
+// ── space weather ────────────────────────────────────────────────────────
+
+    describe("space weather", () => {
+      const kpAt = (hours: number, kp: number) => ({
+        source: "planetary-k-index" as const,
+        observedAt: at(hours),
+        kp,
+        aRunning: 9,
+        solarWindSpeedKmS: undefined,
+        solarWindDensity: undefined,
+        bzNt: undefined,
+        radioBlackoutScale: undefined,
+        solarRadiationScale: undefined,
+        geomagneticScale: undefined,
+        retrievedAt: at(0),
+      });
+
+      it("stores an observation and reads back the latest", async () => {
+        expect(await db.spaceWeather.record([kpAt(-6, 2.33), kpAt(-3, 4.67)])).toEqual({
+          inserted: 2,
+          updated: 0,
+        });
+
+        const latest = await db.spaceWeather.latest("planetary-k-index");
+        expect(latest?.kp).toBe(4.67);
+        expect(latest?.observedAt.toISOString()).toBe(at(-3).toISOString());
+      });
+
+      it("refreshes rather than duplicating a republished instant", async () => {
+        // NOAA republishes overlapping windows on every poll, so the same instant
+        // arriving twice is the normal case and not a conflict.
+        await db.spaceWeather.record([kpAt(-3, 4.67)]);
+        expect(await db.spaceWeather.record([kpAt(-3, 5.0)])).toEqual({
+          inserted: 0,
+          updated: 1,
+        });
+        expect((await db.spaceWeather.latest("planetary-k-index"))?.kp).toBe(5.0);
+      });
+
+      it("keeps sources apart", async () => {
+        await db.spaceWeather.record([
+          kpAt(-3, 4.67),
+          {
+            ...kpAt(-1, 0),
+            source: "solar-wind" as const,
+            kp: undefined,
+            aRunning: undefined,
+            solarWindSpeedKmS: 428.1,
+            bzNt: -3.4,
+          },
+        ]);
+
+        expect((await db.spaceWeather.latest("planetary-k-index"))?.kp).toBe(4.67);
+        expect((await db.spaceWeather.latest("solar-wind"))?.solarWindSpeedKmS).toBe(428.1);
+        // A source that reports no Kp stores no Kp, rather than a zero that would
+        // average into a quiet reading.
+        expect((await db.spaceWeather.latest("solar-wind"))?.kp).toBeUndefined();
+      });
+
+      it("returns a window oldest first, which is how it is plotted", async () => {
+        await db.spaceWeather.record([kpAt(-12, 1), kpAt(-9, 2), kpAt(-6, 3), kpAt(-3, 4)]);
+
+        const window = await db.spaceWeather.since("planetary-k-index", at(-9));
+        expect(window.map((observation) => observation.kp)).toEqual([2, 3, 4]);
+      });
+
+      it("distinguishes the observed instant from the retrieval time", async () => {
+        // Solar wind is additionally propagated from the spacecraft to Earth, so what a
+        // sample DESCRIBES and when it was taken differ by about an hour.
+        await db.spaceWeather.record([kpAt(-3, 4.67)]);
+        const latest = await db.spaceWeather.latest("planetary-k-index");
+        expect(latest?.observedAt.toISOString()).toBe(at(-3).toISOString());
+        expect(latest?.retrievedAt.toISOString()).toBe(at(0).toISOString());
+      });
+
+      it("reports nothing stored rather than inventing quiet conditions", async () => {
+        // A tracker that showed Kp 0 when it had no data would be claiming calm
+        // conditions during a storm it simply had not fetched.
+        expect(await db.spaceWeather.latest("scales")).toBeUndefined();
+        expect(await db.spaceWeather.since("scales", at(-24))).toEqual([]);
+      });
+
+      it("treats an empty batch as a no-op", async () => {
+        expect(await db.spaceWeather.record([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
+    // ── launches ─────────────────────────────────────────────────────────────
+
+    describe("launches", () => {
+      const launch = (id: string, hoursFromNow: number, overrides: Record<string, unknown> = {}) => ({
+        id,
+        provider: "launch-library",
+        name: "Electron | Owl Around The World",
+        net: at(hoursFromNow),
+        netPrecision: "Minute",
+        windowStart: at(hoursFromNow),
+        windowEnd: at(hoursFromNow + 2),
+        statusName: "Go for Launch",
+        statusAbbrev: "Go",
+        serviceProvider: "Rocket Lab",
+        rocketName: "Electron",
+        missionName: "StriX Launch 11",
+        missionOrbit: "Low Earth Orbit",
+        padName: "Launch Complex 1",
+        padLocation: "Mahia Peninsula, New Zealand",
+        padLatitude: -39.2611,
+        padLongitude: 177.8649,
+        webcastLive: false,
+        retrievedAt: at(0),
+        ...overrides,
+      });
+
+      it("stores a launch and returns it as upcoming", async () => {
+        expect(await db.launches.upsertMany([launch("a", 6)])).toEqual({
+          inserted: 1,
+          updated: 0,
+        });
+
+        const upcoming = await db.launches.upcoming(at(0), 10);
+        expect(upcoming).toHaveLength(1);
+        expect(upcoming[0]?.name).toBe("Electron | Owl Around The World");
+        expect(upcoming[0]?.rocketName).toBe("Electron");
+        expect(upcoming[0]?.padLatitude).toBeCloseTo(-39.2611, 4);
+      });
+
+      it("keeps how precise the launch time actually is", async () => {
+        // Launch Library sends a full ISO timestamp even for a launch known only to
+        // the month. Without the precision beside it, the UI would render a
+        // to-the-minute T-0 for something that might slip four weeks.
+        await db.launches.upsertMany([
+          launch("precise", 6),
+          launch("vague", 800, { netPrecision: "Month" }),
+          launch("unstated", 900, { netPrecision: undefined }),
+        ]);
+
+        const upcoming = await db.launches.upcoming(at(0), 10);
+        const byId = new Map(upcoming.map((one) => [one.id, one]));
+        expect(byId.get("precise")?.netPrecision).toBe("Minute");
+        expect(byId.get("vague")?.netPrecision).toBe("Month");
+        // Not stated is not the same as precise, and must not default to one.
+        expect(byId.get("unstated")?.netPrecision).toBeUndefined();
+      });
+
+      it("treats a slipped launch as an update, not a new row", async () => {
+        // Launches slip constantly and are republished under the same id.
+        await db.launches.upsertMany([launch("a", 6)]);
+        expect(
+          await db.launches.upsertMany([
+            launch("a", 30, { statusName: "To Be Determined", statusAbbrev: "TBD" }),
+          ]),
+        ).toEqual({ inserted: 0, updated: 1 });
+
+        const upcoming = await db.launches.upcoming(at(0), 10);
+        expect(upcoming).toHaveLength(1);
+        expect(upcoming[0]?.net.toISOString()).toBe(at(30).toISOString());
+        expect(upcoming[0]?.statusName).toBe("To Be Determined");
+      });
+
+      it("excludes launches whose time has passed", async () => {
+        // Filtered on time rather than status: a launch that slipped into the past
+        // without its status being updated is stale, and showing it is worse than
+        // showing nothing.
+        await db.launches.upsertMany([launch("past", -3), launch("future", 3)]);
+        expect((await db.launches.upcoming(at(0), 10)).map((one) => one.id)).toEqual([
+          "future",
+        ]);
+      });
+
+      it("returns the soonest first and honours the limit", async () => {
+        await db.launches.upsertMany([
+          launch("third", 72),
+          launch("first", 2),
+          launch("second", 24),
+        ]);
+
+        expect((await db.launches.upcoming(at(0), 2)).map((one) => one.id)).toEqual([
+          "first",
+          "second",
+        ]);
+      });
+
+      it("stores a pad with no coordinates rather than dropping the launch", async () => {
+        // Plenty of pads have no usable position. The launch is still real.
+        await db.launches.upsertMany([
+          launch("a", 6, { padLatitude: undefined, padLongitude: undefined }),
+        ]);
+        const [stored] = await db.launches.upcoming(at(0), 10);
+        expect(stored?.padLatitude).toBeUndefined();
+        expect(stored?.padName).toBe("Launch Complex 1");
+      });
+
+      it("treats an empty batch as a no-op", async () => {
+        expect(await db.launches.upsertMany([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
+    // ── ground stations ──────────────────────────────────────────────────────
+
+    describe("ground stations", () => {
+      const station = (id: string, overrides: Record<string, unknown> = {}) => ({
+        id,
+        provider: "satnogs-network",
+        name: "Hackerspace.gr 1",
+        latitude: 38.01697,
+        longitude: 23.7314,
+        altitudeM: 104,
+        minHorizonDegrees: 40,
+        status: "Online",
+        bands: ["UHF"],
+        observations: 10624,
+        lastSeen: at(-2),
+        retrievedAt: at(0),
+        ...overrides,
+      });
+
+      it("stores a station and reads it back", async () => {
+        expect(await db.stations.upsertMany([station("1")])).toEqual({
+          inserted: 1,
+          updated: 0,
+        });
+
+        const [stored] = await db.stations.list();
+        expect(stored?.name).toBe("Hackerspace.gr 1");
+        expect(stored?.latitude).toBeCloseTo(38.01697, 5);
+        // The station's OWN horizon, not a global default: a site in a valley may not
+        // observe below 40 degrees, so "above 10" is not the same question everywhere.
+        expect(stored?.minHorizonDegrees).toBe(40);
+      });
+
+      it("round-trips the band array", async () => {
+        // Postgres arrays are the part of this most likely to come back as a string.
+        await db.stations.upsertMany([station("1", { bands: ["UHF", "VHF", "L"] })]);
+        const [stored] = await db.stations.list();
+        expect(Array.isArray(stored?.bands)).toBe(true);
+        expect([...(stored?.bands ?? [])].sort()).toEqual(["L", "UHF", "VHF"]);
+      });
+
+      it("keeps a station with no bands rather than rejecting it", async () => {
+        // A registered site not yet equipped is real.
+        await db.stations.upsertMany([station("1", { bands: [] })]);
+        const [stored] = await db.stations.list();
+        expect(stored?.bands).toEqual([]);
+      });
+
+      it("stores offline stations too, and can count by status", async () => {
+        // 4,119 of 4,452 in the real listing were Offline. Storing only the online ones
+        // would make the data useless the next time a station comes back, and treating
+        // the total as capacity would overstate coverage tenfold.
+        await db.stations.upsertMany([
+          station("1", { status: "Online" }),
+          station("2", { status: "Offline" }),
+          station("3", { status: "Offline" }),
+          station("4", { status: "Testing" }),
+        ]);
+
+        expect(await db.stations.countByStatus()).toEqual({
+          Online: 1,
+          Offline: 2,
+          Testing: 1,
+        });
+        expect((await db.stations.list({ status: "Online" })).map((one) => one.id)).toEqual([
+          "1",
+        ]);
+      });
+
+      it("orders by most recently heard from", async () => {
+        await db.stations.upsertMany([
+          station("stale", { lastSeen: at(-1000) }),
+          station("fresh", { lastSeen: at(-1) }),
+          station("never", { lastSeen: undefined }),
+        ]);
+
+        const ids = (await db.stations.list()).map((one) => one.id);
+        expect(ids[0]).toBe("fresh");
+        expect(ids[1]).toBe("stale");
+        // A station that has never checked in sorts last rather than being dropped.
+        expect(ids[2]).toBe("never");
+      });
+
+      it("updates a republished station rather than duplicating it", async () => {
+        await db.stations.upsertMany([station("1")]);
+        expect(
+          await db.stations.upsertMany([station("1", { status: "Offline" })]),
+        ).toEqual({ inserted: 0, updated: 1 });
+        expect((await db.stations.list())[0]?.status).toBe("Offline");
+      });
+
+      it("treats an empty batch as a no-op", async () => {
+        expect(await db.stations.upsertMany([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
+    // ── solar events ─────────────────────────────────────────────────────────
+
+    describe("solar events", () => {
+      const event = (id: string, hours: number, overrides: Record<string, unknown> = {}) => ({
+        id,
+        provider: "nasa-donki",
+        type: "GST",
+        knownType: true,
+        issuedAt: at(hours),
+        url: "https://example.invalid/donki/1",
+        summary: "A geomagnetic storm was observed.",
+        body: "## Message Type: Space Weather Notification - GST\n\nDetail.",
+        retrievedAt: at(0),
+        ...overrides,
+      });
+
+      it("stores an event and reads it back newest first", async () => {
+        await db.solarEvents.upsertMany([
+          event("old", -48),
+          event("newest", -1),
+          event("middle", -12),
+        ]);
+
+        expect((await db.solarEvents.recent()).map((one) => one.id)).toEqual([
+          "newest",
+          "middle",
+          "old",
+        ]);
+      });
+
+      it("keeps the narrative body verbatim", async () => {
+        // DONKI bodies are prose whose layout varies by message type. Parsing them into
+        // columns would be inventing structure NASA did not publish.
+        await db.solarEvents.upsertMany([event("1", -1)]);
+        const [stored] = await db.solarEvents.recent();
+        expect(stored?.body).toContain("## Message Type");
+        expect(stored?.summary).toBe("A geomagnetic storm was observed.");
+      });
+
+      it("stores a type it cannot explain rather than rejecting it", async () => {
+        // NASA adds message types. A new one is a row this product cannot yet explain,
+        // not an ingestion failure.
+        await db.solarEvents.upsertMany([
+          event("1", -1, { type: "XYZ", knownType: false }),
+        ]);
+        const [stored] = await db.solarEvents.recent();
+        expect(stored?.type).toBe("XYZ");
+        expect(stored?.knownType).toBe(false);
+      });
+
+      it("filters by type and by time", async () => {
+        await db.solarEvents.upsertMany([
+          event("storm", -2, { type: "GST" }),
+          event("flare", -3, { type: "FLR" }),
+          event("ancient", -500, { type: "GST" }),
+        ]);
+
+        expect((await db.solarEvents.recent({ types: ["GST"] })).map((one) => one.id)).toEqual([
+          "storm",
+          "ancient",
+        ]);
+        expect((await db.solarEvents.recent({ since: at(-24) })).map((one) => one.id)).toEqual([
+          "storm",
+          "flare",
+        ]);
+      });
+
+      it("honours a limit", async () => {
+        await db.solarEvents.upsertMany([event("a", -1), event("b", -2), event("c", -3)]);
+        expect(await db.solarEvents.recent({ limit: 2 })).toHaveLength(2);
+      });
+
+      it("updates a republished event rather than duplicating it", async () => {
+        await db.solarEvents.upsertMany([event("1", -1)]);
+        expect(
+          await db.solarEvents.upsertMany([event("1", -1, { summary: "Revised." })]),
+        ).toEqual({ inserted: 0, updated: 1 });
+        expect((await db.solarEvents.recent())[0]?.summary).toBe("Revised.");
+      });
+
+      it("treats an empty batch as a no-op", async () => {
+        expect(await db.solarEvents.upsertMany([])).toEqual({ inserted: 0, updated: 0 });
+      });
+    });
+
+    describe("watchlist sync", () => {
+      // A hash, because that is all this layer ever sees. The code that produced it
+      // lives on two phones and nowhere else.
+      const hashA = "a".repeat(64);
+      const hashB = "b".repeat(64);
+
+      it("stores a list and hands it back", async () => {
+        const { updatedAt } = await db.watchlistSync.put(hashA, ["25544", "20580"]);
+        expect(updatedAt).toBeInstanceOf(Date);
+
+        const stored = await db.watchlistSync.get(hashA);
+        expect(stored?.catalogIds).toEqual(["25544", "20580"]);
+        expect(stored?.codeHash).toBe(hashA);
+      });
+
+      it("replaces the list rather than merging into it", async () => {
+        /*
+         * Removing an object has to survive a sync, which merging would prevent: the
+         * other device would keep handing the deleted entry back and it would return
+         * every time. A watchlist is the user's current answer, not an accumulation.
+         */
+        await db.watchlistSync.put(hashA, ["25544", "20580"]);
+        await db.watchlistSync.put(hashA, ["25544"]);
+
+        expect((await db.watchlistSync.get(hashA))?.catalogIds).toEqual(["25544"]);
+      });
+
+      it("keeps pairings apart", async () => {
+        await db.watchlistSync.put(hashA, ["25544"]);
+        await db.watchlistSync.put(hashB, ["20580"]);
+
+        expect((await db.watchlistSync.get(hashA))?.catalogIds).toEqual(["25544"]);
+        expect((await db.watchlistSync.get(hashB))?.catalogIds).toEqual(["20580"]);
+      });
+
+      it("returns nothing for a hash it has never seen", async () => {
+        // Undefined, not an empty list. "No such pairing" and "a pairing with nothing
+        // on it" are different answers and the API says so with different statuses.
+        expect(await db.watchlistSync.get("c".repeat(64))).toBeUndefined();
+      });
+
+      it("stores an empty list as an empty list", async () => {
+        // Clearing a watchlist is a legitimate state to sync, and must not read back as
+        // "never paired" — which would resurrect the old list on the other device.
+        await db.watchlistSync.put(hashA, []);
+        expect((await db.watchlistSync.get(hashA))?.catalogIds).toEqual([]);
+      });
+
+      it("forgets one on request", async () => {
+        await db.watchlistSync.put(hashA, ["25544"]);
+
+        expect(await db.watchlistSync.remove(hashA)).toBe(true);
+        expect(await db.watchlistSync.get(hashA)).toBeUndefined();
+        // Removing something already gone is not an error, so a retried request after a
+        // dropped connection does not fail the second time.
+        expect(await db.watchlistSync.remove(hashA)).toBe(false);
+      });
+
+      it("purges what has been abandoned and keeps what has not", async () => {
+        // Abandoned data is a liability rather than an asset: nobody benefits from a
+        // list left behind by a device that stopped syncing two years ago.
+        await db.watchlistSync.put(hashA, ["25544"]);
+
+        const beforeEverything = new Date(Date.now() - 60_000);
+        expect(await db.watchlistSync.purgeOlderThan(beforeEverything)).toBe(0);
+        expect(await db.watchlistSync.get(hashA)).toBeDefined();
+
+        const afterEverything = new Date(Date.now() + 60_000);
+        expect(await db.watchlistSync.purgeOlderThan(afterEverything)).toBe(1);
+        expect(await db.watchlistSync.get(hashA)).toBeUndefined();
       });
     });
 

@@ -15,6 +15,18 @@ import type {
   SatelliteFilter,
   SatelliteRecord,
   SatelliteRepository,
+  GroundStationRecord,
+  GroundStationRepository,
+  LaunchRecord,
+  LaunchRepository,
+  SolarEventRecord,
+  SolarEventRepository,
+  RadioRepository,
+  RadioTransmitter,
+  SatelliteGroupRepository,
+  SpaceWeatherObservation,
+  SpaceWeatherRepository,
+  WatchlistSyncRepository,
 } from "./repositories.js";
 
 /**
@@ -210,6 +222,13 @@ function chunk<T>(items: readonly T[], size: number): readonly (readonly T[])[] 
 export class PostgresDatabase implements Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
+  readonly groups: SatelliteGroupRepository;
+  readonly radio: RadioRepository;
+  readonly spaceWeather: SpaceWeatherRepository;
+  readonly launches: LaunchRepository;
+  readonly stations: GroundStationRepository;
+  readonly solarEvents: SolarEventRepository;
+  readonly watchlistSync: WatchlistSyncRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -221,6 +240,13 @@ export class PostgresDatabase implements Database {
     this.#config = config;
     this.satellites = createSatelliteRepository(sql);
     this.elements = createElementRepository(sql);
+    this.groups = createGroupRepository(sql);
+    this.radio = createRadioRepository(sql);
+    this.spaceWeather = createSpaceWeatherRepository(sql);
+    this.launches = createLaunchRepository(sql);
+    this.stations = createStationRepository(sql);
+    this.solarEvents = createSolarEventRepository(sql);
+    this.watchlistSync = createWatchlistSyncRepository(sql);
     this.providerRuns = createProviderRunRepository(sql);
     this.leases = createLeaseRepository(sql);
   }
@@ -705,6 +731,805 @@ function createProviderRunRepository(sql: Sql): ProviderRunRepository {
 }
 
 // ── ingestion leases ─────────────────────────────────────────────────────────────
+
+interface RadioRow {
+  uuid: string;
+  provider: string;
+  norad_cat_id: string | null;
+  sat_id: string | null;
+  description: string;
+  type: string | null;
+  status: string;
+  alive: boolean;
+  uplink_low_hz: string | number | null;
+  uplink_high_hz: string | number | null;
+  downlink_low_hz: string | number | null;
+  downlink_high_hz: string | number | null;
+  mode: string | null;
+  uplink_mode: string | null;
+  baud: number | null;
+  inverted: boolean | null;
+  service: string | null;
+  citation: string | null;
+  updated_at: Date | null;
+  retrieved_at: Date;
+  first_seen_at: Date;
+  last_seen_at: Date;
+}
+
+/**
+ * BIGINT comes back from postgres.js as a STRING.
+ *
+ * That is correct of the driver — a 64-bit integer does not always survive a double —
+ * and wrong for us if left alone, because `"145825000" > 146000000` compares a string
+ * to a number and silently misbehaves. Frequencies fit comfortably in a double (24 GHz
+ * is nine digits), so converting here is safe and keeps the rest of the codebase in
+ * numbers.
+ */
+function toHertz(value: string | number | null): number | undefined {
+  if (value === null) return undefined;
+  const numeric = typeof value === "string" ? Number(value) : value;
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function toTransmitter(row: RadioRow): RadioTransmitter {
+  return {
+    uuid: row.uuid,
+    provider: row.provider,
+    catalogId: row.norad_cat_id ?? undefined,
+    satId: row.sat_id ?? undefined,
+    description: row.description,
+    type: row.type ?? undefined,
+    status: row.status,
+    alive: row.alive,
+    uplinkLowHz: toHertz(row.uplink_low_hz),
+    uplinkHighHz: toHertz(row.uplink_high_hz),
+    downlinkLowHz: toHertz(row.downlink_low_hz),
+    downlinkHighHz: toHertz(row.downlink_high_hz),
+    mode: row.mode ?? undefined,
+    uplinkMode: row.uplink_mode ?? undefined,
+    baud: row.baud ?? undefined,
+    inverted: row.inverted ?? undefined,
+    service: row.service ?? undefined,
+    citation: row.citation ?? undefined,
+    updatedAt: row.updated_at ?? undefined,
+    retrievedAt: row.retrieved_at,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+  };
+}
+
+function createRadioRepository(sql: Sql): RadioRepository {
+  return {
+    async upsertMany(transmitters) {
+      if (transmitters.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(transmitters, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((transmitter) => ({
+              uuid: transmitter.uuid,
+              provider: transmitter.provider,
+              norad_cat_id: transmitter.catalogId ?? null,
+              sat_id: transmitter.satId ?? null,
+              description: transmitter.description,
+              type: transmitter.type ?? null,
+              status: transmitter.status,
+              alive: transmitter.alive,
+              uplink_low_hz: transmitter.uplinkLowHz ?? null,
+              uplink_high_hz: transmitter.uplinkHighHz ?? null,
+              downlink_low_hz: transmitter.downlinkLowHz ?? null,
+              downlink_high_hz: transmitter.downlinkHighHz ?? null,
+              mode: transmitter.mode ?? null,
+              uplink_mode: transmitter.uplinkMode ?? null,
+              baud: transmitter.baud ?? null,
+              inverted: transmitter.inverted ?? null,
+              service: transmitter.service ?? null,
+              citation: transmitter.citation ?? null,
+              updated_at: transmitter.updatedAt?.toISOString() ?? null,
+              retrieved_at: transmitter.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        // xmax = 0 distinguishes an insert from an update without a second round trip,
+        // the same idiom the element and group writes use. first_seen_at is never
+        // moved forward.
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO radio_transmitters (
+            uuid, provider, norad_cat_id, sat_id, description, type, status, alive,
+            uplink_low_hz, uplink_high_hz, downlink_low_hz, downlink_high_hz,
+            mode, uplink_mode, baud, inverted, service, citation,
+            updated_at, retrieved_at, first_seen_at, last_seen_at
+          )
+          SELECT
+            i.uuid, i.provider, i.norad_cat_id, i.sat_id, i.description, i.type,
+            i.status, i.alive,
+            i.uplink_low_hz, i.uplink_high_hz, i.downlink_low_hz, i.downlink_high_hz,
+            i.mode, i.uplink_mode, i.baud, i.inverted, i.service, i.citation,
+            i.updated_at, i.retrieved_at, now(), now()
+          FROM json_to_recordset(${payload}::json) AS i(
+            uuid TEXT, provider TEXT, norad_cat_id TEXT, sat_id TEXT, description TEXT,
+            type TEXT, status TEXT, alive BOOLEAN,
+            uplink_low_hz BIGINT, uplink_high_hz BIGINT,
+            downlink_low_hz BIGINT, downlink_high_hz BIGINT,
+            mode TEXT, uplink_mode TEXT, baud DOUBLE PRECISION, inverted BOOLEAN,
+            service TEXT, citation TEXT,
+            updated_at TIMESTAMPTZ, retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (uuid) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            norad_cat_id = EXCLUDED.norad_cat_id,
+            sat_id = EXCLUDED.sat_id,
+            description = EXCLUDED.description,
+            type = EXCLUDED.type,
+            status = EXCLUDED.status,
+            alive = EXCLUDED.alive,
+            uplink_low_hz = EXCLUDED.uplink_low_hz,
+            uplink_high_hz = EXCLUDED.uplink_high_hz,
+            downlink_low_hz = EXCLUDED.downlink_low_hz,
+            downlink_high_hz = EXCLUDED.downlink_high_hz,
+            mode = EXCLUDED.mode,
+            uplink_mode = EXCLUDED.uplink_mode,
+            baud = EXCLUDED.baud,
+            inverted = EXCLUDED.inverted,
+            service = EXCLUDED.service,
+            citation = EXCLUDED.citation,
+            updated_at = EXCLUDED.updated_at,
+            retrieved_at = EXCLUDED.retrieved_at,
+            last_seen_at = now()
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async forSatellite(catalogId, options = {}) {
+      const rows = await sql<RadioRow[]>`
+        SELECT * FROM radio_transmitters
+        WHERE norad_cat_id = ${catalogId}
+          ${options.includeDead === true ? sql`` : sql`AND alive = TRUE`}
+        ORDER BY downlink_low_hz NULLS LAST, uuid
+      `;
+      return rows.map(toTransmitter);
+    },
+
+    async count() {
+      const rows = await sql<{ count: string }[]>`SELECT count(*)::text AS count FROM radio_transmitters`;
+      return Number(rows[0]?.count ?? 0);
+    },
+  };
+}
+
+interface SpaceWeatherRow {
+  source: string;
+  observed_at: Date;
+  kp: number | null;
+  a_running: number | null;
+  solar_wind_speed_km_s: number | null;
+  solar_wind_density: number | null;
+  bz_nt: number | null;
+  radio_blackout_scale: number | null;
+  solar_radiation_scale: number | null;
+  geomagnetic_scale: number | null;
+  retrieved_at: Date;
+}
+
+function toObservation(row: SpaceWeatherRow): SpaceWeatherObservation {
+  return {
+    source: row.source as SpaceWeatherObservation["source"],
+    observedAt: row.observed_at,
+    kp: row.kp ?? undefined,
+    aRunning: row.a_running ?? undefined,
+    solarWindSpeedKmS: row.solar_wind_speed_km_s ?? undefined,
+    solarWindDensity: row.solar_wind_density ?? undefined,
+    bzNt: row.bz_nt ?? undefined,
+    radioBlackoutScale: row.radio_blackout_scale ?? undefined,
+    solarRadiationScale: row.solar_radiation_scale ?? undefined,
+    geomagneticScale: row.geomagnetic_scale ?? undefined,
+    retrievedAt: row.retrieved_at,
+  };
+}
+
+function createSpaceWeatherRepository(sql: Sql): SpaceWeatherRepository {
+  return {
+    async record(observations) {
+      if (observations.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(observations, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((observation) => ({
+              source: observation.source,
+              observed_at: observation.observedAt.toISOString(),
+              kp: observation.kp ?? null,
+              a_running: observation.aRunning ?? null,
+              solar_wind_speed_km_s: observation.solarWindSpeedKmS ?? null,
+              solar_wind_density: observation.solarWindDensity ?? null,
+              bz_nt: observation.bzNt ?? null,
+              radio_blackout_scale: observation.radioBlackoutScale ?? null,
+              solar_radiation_scale: observation.solarRadiationScale ?? null,
+              geomagnetic_scale: observation.geomagneticScale ?? null,
+              retrieved_at: observation.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO space_weather (
+            source, observed_at, kp, a_running,
+            solar_wind_speed_km_s, solar_wind_density, bz_nt,
+            radio_blackout_scale, solar_radiation_scale, geomagnetic_scale, retrieved_at
+          )
+          SELECT
+            i.source, i.observed_at, i.kp, i.a_running,
+            i.solar_wind_speed_km_s, i.solar_wind_density, i.bz_nt,
+            i.radio_blackout_scale, i.solar_radiation_scale, i.geomagnetic_scale,
+            i.retrieved_at
+          FROM json_to_recordset(${payload}::json) AS i(
+            source TEXT, observed_at TIMESTAMPTZ,
+            kp DOUBLE PRECISION, a_running DOUBLE PRECISION,
+            solar_wind_speed_km_s DOUBLE PRECISION, solar_wind_density DOUBLE PRECISION,
+            bz_nt DOUBLE PRECISION,
+            radio_blackout_scale SMALLINT, solar_radiation_scale SMALLINT,
+            geomagnetic_scale SMALLINT, retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (source, observed_at) DO UPDATE SET
+            kp = EXCLUDED.kp,
+            a_running = EXCLUDED.a_running,
+            solar_wind_speed_km_s = EXCLUDED.solar_wind_speed_km_s,
+            solar_wind_density = EXCLUDED.solar_wind_density,
+            bz_nt = EXCLUDED.bz_nt,
+            radio_blackout_scale = EXCLUDED.radio_blackout_scale,
+            solar_radiation_scale = EXCLUDED.solar_radiation_scale,
+            geomagnetic_scale = EXCLUDED.geomagnetic_scale,
+            retrieved_at = EXCLUDED.retrieved_at
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async latest(source) {
+      const rows = await sql<SpaceWeatherRow[]>`
+        SELECT * FROM space_weather WHERE source = ${source}
+        ORDER BY observed_at DESC LIMIT 1
+      `;
+      const row = rows[0];
+      return row === undefined ? undefined : toObservation(row);
+    },
+
+    async since(source, from) {
+      const rows = await sql<SpaceWeatherRow[]>`
+        SELECT * FROM space_weather
+        WHERE source = ${source} AND observed_at >= ${from}
+        ORDER BY observed_at ASC
+      `;
+      return rows.map(toObservation);
+    },
+  };
+}
+
+interface LaunchRow {
+  id: string;
+  provider: string;
+  name: string;
+  net: Date;
+  net_precision: string | null;
+  window_start: Date | null;
+  window_end: Date | null;
+  status_name: string | null;
+  status_abbrev: string | null;
+  service_provider: string | null;
+  rocket_name: string | null;
+  mission_name: string | null;
+  mission_orbit: string | null;
+  pad_name: string | null;
+  pad_location: string | null;
+  pad_latitude: number | null;
+  pad_longitude: number | null;
+  webcast_live: boolean;
+  retrieved_at: Date;
+}
+
+function toLaunch(row: LaunchRow): LaunchRecord {
+  return {
+    id: row.id,
+    provider: row.provider,
+    name: row.name,
+    net: row.net,
+    netPrecision: row.net_precision ?? undefined,
+    windowStart: row.window_start ?? undefined,
+    windowEnd: row.window_end ?? undefined,
+    statusName: row.status_name ?? undefined,
+    statusAbbrev: row.status_abbrev ?? undefined,
+    serviceProvider: row.service_provider ?? undefined,
+    rocketName: row.rocket_name ?? undefined,
+    missionName: row.mission_name ?? undefined,
+    missionOrbit: row.mission_orbit ?? undefined,
+    padName: row.pad_name ?? undefined,
+    padLocation: row.pad_location ?? undefined,
+    padLatitude: row.pad_latitude ?? undefined,
+    padLongitude: row.pad_longitude ?? undefined,
+    webcastLive: row.webcast_live,
+    retrievedAt: row.retrieved_at,
+  };
+}
+
+function createLaunchRepository(sql: Sql): LaunchRepository {
+  return {
+    async upsertMany(launches) {
+      if (launches.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(launches, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((launch) => ({
+              id: launch.id,
+              provider: launch.provider,
+              name: launch.name,
+              net: launch.net.toISOString(),
+              net_precision: launch.netPrecision ?? null,
+              window_start: launch.windowStart?.toISOString() ?? null,
+              window_end: launch.windowEnd?.toISOString() ?? null,
+              status_name: launch.statusName ?? null,
+              status_abbrev: launch.statusAbbrev ?? null,
+              service_provider: launch.serviceProvider ?? null,
+              rocket_name: launch.rocketName ?? null,
+              mission_name: launch.missionName ?? null,
+              mission_orbit: launch.missionOrbit ?? null,
+              pad_name: launch.padName ?? null,
+              pad_location: launch.padLocation ?? null,
+              pad_latitude: launch.padLatitude ?? null,
+              pad_longitude: launch.padLongitude ?? null,
+              webcast_live: launch.webcastLive,
+              retrieved_at: launch.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        // xmax = 0 tells an insert from an update in one round trip, the same idiom
+        // every other bulk write here uses. A slipped NET is an update, not a new row.
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO launches (
+            id, provider, name, net, net_precision, window_start, window_end,
+            status_name, status_abbrev, service_provider, rocket_name,
+            mission_name, mission_orbit, pad_name, pad_location,
+            pad_latitude, pad_longitude, webcast_live, retrieved_at,
+            first_seen_at, last_seen_at
+          )
+          SELECT
+            i.id, i.provider, i.name, i.net, i.net_precision, i.window_start, i.window_end,
+            i.status_name, i.status_abbrev, i.service_provider, i.rocket_name,
+            i.mission_name, i.mission_orbit, i.pad_name, i.pad_location,
+            i.pad_latitude, i.pad_longitude, i.webcast_live, i.retrieved_at,
+            now(), now()
+          FROM json_to_recordset(${payload}::json) AS i(
+            id TEXT, provider TEXT, name TEXT, net TIMESTAMPTZ, net_precision TEXT,
+            window_start TIMESTAMPTZ, window_end TIMESTAMPTZ,
+            status_name TEXT, status_abbrev TEXT, service_provider TEXT,
+            rocket_name TEXT, mission_name TEXT, mission_orbit TEXT,
+            pad_name TEXT, pad_location TEXT,
+            pad_latitude DOUBLE PRECISION, pad_longitude DOUBLE PRECISION,
+            webcast_live BOOLEAN, retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            net = EXCLUDED.net,
+            net_precision = EXCLUDED.net_precision,
+            window_start = EXCLUDED.window_start,
+            window_end = EXCLUDED.window_end,
+            status_name = EXCLUDED.status_name,
+            status_abbrev = EXCLUDED.status_abbrev,
+            service_provider = EXCLUDED.service_provider,
+            rocket_name = EXCLUDED.rocket_name,
+            mission_name = EXCLUDED.mission_name,
+            mission_orbit = EXCLUDED.mission_orbit,
+            pad_name = EXCLUDED.pad_name,
+            pad_location = EXCLUDED.pad_location,
+            pad_latitude = EXCLUDED.pad_latitude,
+            pad_longitude = EXCLUDED.pad_longitude,
+            webcast_live = EXCLUDED.webcast_live,
+            retrieved_at = EXCLUDED.retrieved_at,
+            last_seen_at = now()
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async upcoming(from, limit) {
+      const rows = await sql<LaunchRow[]>`
+        SELECT * FROM launches WHERE net >= ${from} ORDER BY net ASC LIMIT ${limit}
+      `;
+      return rows.map(toLaunch);
+    },
+  };
+}
+
+interface GroundStationRow {
+  id: string;
+  provider: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  altitude_m: number;
+  min_horizon_degrees: number;
+  status: string;
+  bands: string[];
+  observations: number;
+  last_seen: Date | null;
+  retrieved_at: Date;
+}
+
+function toStation(row: GroundStationRow): GroundStationRecord {
+  return {
+    id: row.id,
+    provider: row.provider,
+    name: row.name,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    altitudeM: row.altitude_m,
+    minHorizonDegrees: row.min_horizon_degrees,
+    status: row.status,
+    bands: row.bands,
+    observations: row.observations,
+    lastSeen: row.last_seen ?? undefined,
+    retrievedAt: row.retrieved_at,
+  };
+}
+
+function createStationRepository(sql: Sql): GroundStationRepository {
+  return {
+    async upsertMany(stations) {
+      if (stations.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(stations, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((station) => ({
+              id: station.id,
+              provider: station.provider,
+              name: station.name,
+              latitude: station.latitude,
+              longitude: station.longitude,
+              altitude_m: station.altitudeM,
+              min_horizon_degrees: station.minHorizonDegrees,
+              status: station.status,
+              // Serialised as JSON and cast back to TEXT[] on the way in: json_to_recordset
+              // has no array column type that round-trips a JSON array directly.
+              bands: JSON.stringify(station.bands),
+              observations: station.observations,
+              last_seen: station.lastSeen?.toISOString() ?? null,
+              retrieved_at: station.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO ground_stations (
+            id, provider, name, latitude, longitude, altitude_m, min_horizon_degrees,
+            status, bands, observations, last_seen, retrieved_at,
+            first_seen_at, last_seen_at
+          )
+          SELECT
+            i.id, i.provider, i.name, i.latitude, i.longitude, i.altitude_m,
+            i.min_horizon_degrees, i.status,
+            ARRAY(SELECT json_array_elements_text(i.bands::json)),
+            i.observations, i.last_seen, i.retrieved_at, now(), now()
+          FROM json_to_recordset(${payload}::json) AS i(
+            id TEXT, provider TEXT, name TEXT,
+            latitude DOUBLE PRECISION, longitude DOUBLE PRECISION,
+            altitude_m DOUBLE PRECISION, min_horizon_degrees DOUBLE PRECISION,
+            status TEXT, bands TEXT, observations INTEGER,
+            last_seen TIMESTAMPTZ, retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            altitude_m = EXCLUDED.altitude_m,
+            min_horizon_degrees = EXCLUDED.min_horizon_degrees,
+            status = EXCLUDED.status,
+            bands = EXCLUDED.bands,
+            observations = EXCLUDED.observations,
+            last_seen = EXCLUDED.last_seen,
+            retrieved_at = EXCLUDED.retrieved_at,
+            last_seen_at = now()
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async list(options = {}) {
+      const rows = await sql<GroundStationRow[]>`
+        SELECT * FROM ground_stations
+        ${options.status === undefined ? sql`` : sql`WHERE status = ${options.status}`}
+        ORDER BY last_seen DESC NULLS LAST, id
+        ${options.limit === undefined ? sql`` : sql`LIMIT ${options.limit}`}
+      `;
+      return rows.map(toStation);
+    },
+
+    async countByStatus() {
+      const rows = await sql<{ status: string; count: string }[]>`
+        SELECT status, count(*)::text AS count FROM ground_stations GROUP BY status
+      `;
+      const counts: Record<string, number> = {};
+      for (const row of rows) counts[row.status] = Number(row.count);
+      return counts;
+    },
+  };
+}
+
+interface SolarEventRow {
+  id: string;
+  provider: string;
+  type: string;
+  known_type: boolean;
+  issued_at: Date;
+  url: string;
+  summary: string;
+  body: string;
+  retrieved_at: Date;
+}
+
+function toSolarEventRecord(row: SolarEventRow): SolarEventRecord {
+  return {
+    id: row.id,
+    provider: row.provider,
+    type: row.type,
+    knownType: row.known_type,
+    issuedAt: row.issued_at,
+    url: row.url,
+    summary: row.summary,
+    body: row.body,
+    retrievedAt: row.retrieved_at,
+  };
+}
+
+/**
+ * Watchlist pairing.
+ *
+ * Every operation is a primary-key lookup on the hash of a code the server never
+ * stores. There is deliberately no query that lists pairings or searches by prefix: the
+ * only way to reach a row is to already hold the code that produced it.
+ */
+function createWatchlistSyncRepository(sql: Sql): WatchlistSyncRepository {
+  return {
+    async put(codeHash, catalogIds) {
+      const rows = await sql<{ updated_at: Date }[]>`
+        INSERT INTO watchlist_sync (code_hash, catalog_ids, created_at, updated_at)
+        VALUES (${codeHash}, ${sql.json([...catalogIds])}, now(), now())
+        ON CONFLICT (code_hash) DO UPDATE SET
+          catalog_ids = EXCLUDED.catalog_ids,
+          updated_at = now()
+        RETURNING updated_at
+      `;
+      return { updatedAt: rows[0]?.updated_at ?? new Date() };
+    },
+
+    async get(codeHash) {
+      const rows = await sql<{ code_hash: string; catalog_ids: unknown; updated_at: Date }[]>`
+        SELECT code_hash, catalog_ids, updated_at
+        FROM watchlist_sync
+        WHERE code_hash = ${codeHash}
+      `;
+      const row = rows[0];
+      if (row === undefined) return undefined;
+
+      /*
+       * Validated on the way out, not trusted.
+       *
+       * JSONB holds whatever was written, and this row may have been written by an
+       * older version of this code. A malformed list should read as an empty one rather
+       * than propagate a non-string into somebody's watchlist.
+       */
+      const catalogIds = Array.isArray(row.catalog_ids)
+        ? row.catalog_ids.filter((value): value is string => typeof value === "string")
+        : [];
+
+      return { codeHash: row.code_hash, catalogIds, updatedAt: row.updated_at };
+    },
+
+    async remove(codeHash) {
+      const rows = await sql<{ code_hash: string }[]>`
+        DELETE FROM watchlist_sync WHERE code_hash = ${codeHash} RETURNING code_hash
+      `;
+      return rows.length > 0;
+    },
+
+    async purgeOlderThan(before) {
+      const rows = await sql<{ code_hash: string }[]>`
+        DELETE FROM watchlist_sync WHERE updated_at < ${before} RETURNING code_hash
+      `;
+      return rows.length;
+    },
+  };
+}
+
+function createSolarEventRepository(sql: Sql): SolarEventRepository {
+  return {
+    async upsertMany(events) {
+      if (events.length === 0) return { inserted: 0, updated: 0 };
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const batch of chunk(events, WRITE_CHUNK_SIZE)) {
+        const payload = sql.json(
+          jsonRows(
+            batch.map((event) => ({
+              id: event.id,
+              provider: event.provider,
+              type: event.type,
+              known_type: event.knownType,
+              issued_at: event.issuedAt.toISOString(),
+              url: event.url,
+              summary: event.summary,
+              body: event.body,
+              retrieved_at: event.retrievedAt.toISOString(),
+            })),
+          ),
+        );
+
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO solar_events (
+            id, provider, type, known_type, issued_at, url, summary, body,
+            retrieved_at, first_seen_at, last_seen_at
+          )
+          SELECT
+            i.id, i.provider, i.type, i.known_type, i.issued_at, i.url, i.summary,
+            i.body, i.retrieved_at, now(), now()
+          FROM json_to_recordset(${payload}::json) AS i(
+            id TEXT, provider TEXT, type TEXT, known_type BOOLEAN,
+            issued_at TIMESTAMPTZ, url TEXT, summary TEXT, body TEXT,
+            retrieved_at TIMESTAMPTZ
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            type = EXCLUDED.type,
+            known_type = EXCLUDED.known_type,
+            issued_at = EXCLUDED.issued_at,
+            url = EXCLUDED.url,
+            summary = EXCLUDED.summary,
+            body = EXCLUDED.body,
+            retrieved_at = EXCLUDED.retrieved_at,
+            last_seen_at = now()
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) inserted += 1;
+          else updated += 1;
+        }
+      }
+
+      return { inserted, updated };
+    },
+
+    async recent(options = {}) {
+      const rows = await sql<SolarEventRow[]>`
+        SELECT * FROM solar_events
+        WHERE TRUE
+          ${options.since === undefined ? sql`` : sql`AND issued_at >= ${options.since}`}
+          ${
+            options.types === undefined
+              ? sql``
+              : sql`AND type = ANY(${options.types as string[]})`
+          }
+        ORDER BY issued_at DESC
+        ${options.limit === undefined ? sql`` : sql`LIMIT ${options.limit}`}
+      `;
+      return rows.map(toSolarEventRecord);
+    },
+  };
+}
+
+function createGroupRepository(sql: Sql): SatelliteGroupRepository {
+  return {
+    async record(provider, groupName, catalogIds, seenAt) {
+      if (catalogIds.length === 0) return { added: 0, refreshed: 0 };
+
+      let added = 0;
+      let refreshed = 0;
+
+      // Chunked for the same reason element inserts are: a group is small today, but
+      // a parameter limit is not the place to discover that it grew.
+      for (const batch of chunk(catalogIds, WRITE_CHUNK_SIZE)) {
+        // json_to_recordset rather than sql(rows, ...columns): the same idiom the
+        // other bulk writes here use, and it keeps the parameter count constant
+        // regardless of batch size.
+        const payload = sql.json(
+          jsonRows(batch.map((catalogId) => ({ catalog_id: catalogId }))),
+        );
+
+        // xmax = 0 identifies a genuinely inserted row, which distinguishes a new
+        // member from a refreshed one without a second round trip. first_seen_at is
+        // deliberately never updated: it records when membership began.
+        const rows = await sql<{ inserted: boolean }[]>`
+          INSERT INTO satellite_groups (catalog_id, provider, group_name, first_seen_at, last_seen_at)
+          SELECT i.catalog_id, ${provider}, ${groupName}, ${seenAt}, ${seenAt}
+          FROM json_to_recordset(${payload}::json) AS i(catalog_id TEXT)
+          ON CONFLICT (catalog_id, provider, group_name) DO UPDATE
+            SET last_seen_at = EXCLUDED.last_seen_at
+          RETURNING (xmax = 0) AS inserted
+        `;
+
+        for (const row of rows) {
+          if (row.inserted) added += 1;
+          else refreshed += 1;
+        }
+      }
+
+      return { added, refreshed };
+    },
+
+    async members(provider, groupName, options = {}) {
+      const since = options.seenSince;
+      const rows = await sql<
+        {
+          catalog_id: string;
+          provider: string;
+          group_name: string;
+          first_seen_at: Date;
+          last_seen_at: Date;
+        }[]
+      >`
+        SELECT catalog_id, provider, group_name, first_seen_at, last_seen_at
+        FROM satellite_groups
+        WHERE provider = ${provider}
+          AND group_name = ${groupName}
+          ${since === undefined ? sql`` : sql`AND last_seen_at >= ${since}`}
+        ORDER BY catalog_id
+      `;
+
+      return rows.map((row) => ({
+        catalogId: row.catalog_id as CatalogId,
+        provider: row.provider,
+        groupName: row.group_name,
+        firstSeenAt: row.first_seen_at,
+        lastSeenAt: row.last_seen_at,
+      }));
+    },
+  };
+}
 
 function createLeaseRepository(sql: Sql): IngestionLeaseRepository {
   return {

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { createMemoryCache, LayeredCache, type CacheDriver } from "@orbitwatch/cache";
 import {
   elementHistoryResponseSchema,
@@ -6,6 +8,8 @@ import {
   providerStatusResponseSchema,
   satelliteListResponseSchema,
   catalogElementsResponseSchema,
+  radioTransmittersResponseSchema,
+  catalogGroupResponseSchema,
 } from "@orbitwatch/contracts";
 import { InMemoryDatabase } from "@orbitwatch/database";
 import type { FastifyInstance } from "fastify";
@@ -48,14 +52,29 @@ const SATELLITE = {
   updatedAt: NOW,
 };
 
+/**
+ * The OMM carries the identity and the epoch, because a real one does.
+ *
+ * This used to be `{ OBJECT_NAME: "ISS (ZARYA)" }` — enough while the catalog wrapped
+ * every record in an envelope that repeated those facts. It is not enough now: the
+ * catalog endpoint serves the provider's record verbatim, so NORAD_CAT_ID and EPOCH
+ * inside it are what the client identifies and propagates from. A fixture thinner than
+ * the real thing would have let that go untested.
+ */
 function elementSet(epoch: Date, overrides: Record<string, unknown> = {}) {
+  const catalogId = typeof overrides["catalogId"] === "string" ? overrides["catalogId"] : "25544";
   return {
     catalogId: "25544",
     provider: "celestrak",
     format: "OMM_JSON" as const,
     epoch,
     retrievedAt: epoch,
-    omm: { OBJECT_NAME: "ISS (ZARYA)" },
+    omm: {
+      OBJECT_NAME: catalogId === "25544" ? "ISS (ZARYA)" : `OBJECT ${catalogId}`,
+      NORAD_CAT_ID: Number(catalogId),
+      // CelesTrak publishes EPOCH without a zone designator, and it is UTC.
+      EPOCH: epoch.toISOString().replace("Z", ""),
+    },
     tleLine1: undefined,
     tleLine2: undefined,
     meanMotion: 15.5,
@@ -281,6 +300,76 @@ describe("OrbitWatch API", () => {
 
   // ── elements ─────────────────────────────────────────────────────────────
 
+  describe("catalog groups", () => {
+    it("serves the current membership of an ingested group", async () => {
+      await database.satellites.upsertMany([
+        SATELLITE,
+        { ...SATELLITE, catalogId: "20580", name: "HST" },
+      ]);
+      await database.groups.record(
+        "celestrak-gp",
+        "visual",
+        ["25544", "20580"],
+        new Date(),
+      );
+
+      const response = await app.inject({ url: "/catalog/groups/visual" });
+      expect(response.statusCode).toBe(200);
+
+      const body = catalogGroupResponseSchema.parse(response.json());
+      expect(body.count).toBe(2);
+      expect(body.catalogIds).toEqual(["20580", "25544"]);
+      expect(body.observedAt).toBeDefined();
+    });
+
+    it("omits members that were not in the most recent ingestion", async () => {
+      await database.satellites.upsertMany([
+        SATELLITE,
+        { ...SATELLITE, catalogId: "20580", name: "HST" },
+      ]);
+
+      // Two runs. The second lists only one object, so the other has left the group
+      // and must stop being offered -- not merely be marked stale somewhere.
+      await database.groups.record("celestrak-gp", "visual", ["25544", "20580"], hoursAgo(6));
+      await database.groups.record("celestrak-gp", "visual", ["25544"], new Date());
+
+      const body = catalogGroupResponseSchema.parse(
+        (await app.inject({ url: "/catalog/groups/visual" })).json(),
+      );
+      expect(body.catalogIds).toEqual(["25544"]);
+    });
+
+    it("says the membership is unknown rather than reporting an empty group", async () => {
+      // An empty array would read as "no objects are visual", which is a claim. Never
+      // having fetched the group is a different thing and must not look like data.
+      const response = await app.inject({ url: "/catalog/groups/visual" });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({
+        error: { code: "GROUP_NOT_INGESTED" },
+      });
+    });
+
+    it("reports membership stamped in the past, not only membership stamped now", async () => {
+      // A captured response replayed with its original fetch time carries timestamps
+      // older than the run that replayed it. Anchoring "current" to the run's clock
+      // made the group come back empty; anchoring it to the membership's own newest
+      // observation is what makes a replay behave like the fetch it stands in for.
+      await database.satellites.upsertMany([SATELLITE]);
+      await database.groups.record("celestrak-gp", "visual", ["25544"], hoursAgo(72));
+
+      const body = catalogGroupResponseSchema.parse(
+        (await app.inject({ url: "/catalog/groups/visual" })).json(),
+      );
+      expect(body.catalogIds).toEqual(["25544"]);
+      expect(body.observedAt).toBe(hoursAgo(72).toISOString());
+    });
+
+    it("rejects a group name that is not a provider slug", async () => {
+      const response = await app.inject({ url: "/catalog/groups/..%2Fetc" });
+      expect(response.statusCode).toBeGreaterThanOrEqual(400);
+    });
+  });
+
   describe("elements", () => {
     beforeEach(async () => {
       await database.satellites.upsertMany([SATELLITE]);
@@ -408,9 +497,24 @@ describe("OrbitWatch API", () => {
 
       // One current set per object, not the whole history.
       expect(body.count).toBe(2);
-      expect(body.elements.find((entry) => entry.catalogId === "25544")?.epoch).toBe(
+
+      // The catalog serves raw OMM records — no per-satellite envelope, because
+      // repeating `provider`, `format` and a restated `epoch` sixteen thousand times
+      // was a third of an 11 MB response that its only consumer never read. So the
+      // identity and the epoch are read from the OMM itself, which is where the
+      // provider put them.
+      const iss = body.elements.find(
+        (entry) => String(entry["NORAD_CAT_ID"]) === "25544",
+      );
+      expect(iss).toBeDefined();
+      expect(new Date(String(iss?.["EPOCH"]) + "Z").toISOString()).toBe(
         hoursAgo(1).toISOString(),
       );
+
+      // And the envelope really is gone, rather than merely unused.
+      expect(iss).not.toHaveProperty("provider");
+      expect(iss).not.toHaveProperty("format");
+      expect(iss).not.toHaveProperty("meanMotion");
     });
 
     it("compresses the catalog response when the client accepts it", async () => {
@@ -444,6 +548,104 @@ describe("OrbitWatch API", () => {
   });
 
   // ── providers ────────────────────────────────────────────────────────────
+
+  describe("radio transmitters", () => {
+    // The endpoint distinguishes "no such satellite" from "this satellite publishes no
+    // radio", so the object has to exist for every case except the 404 test.
+    beforeEach(async () => {
+      await database.satellites.upsertMany([SATELLITE]);
+    });
+
+    const transmitter = (uuid: string, overrides: Record<string, unknown> = {}) => ({
+      uuid,
+      provider: "satnogs-db",
+      catalogId: "25544",
+      satId: "XSKZ-5603-1870-9019-3066",
+      description: "Mode V APRS",
+      type: "Transceiver",
+      status: "active",
+      alive: true,
+      uplinkLowHz: 145_825_000,
+      uplinkHighHz: undefined,
+      downlinkLowHz: 145_825_000,
+      downlinkHighHz: undefined,
+      mode: "AFSK",
+      uplinkMode: "AFSK",
+      baud: 1200,
+      inverted: false,
+      service: "Amateur",
+      citation: "https://example.invalid/citation",
+      updatedAt: new Date("2019-06-16T08:49:33.586Z"),
+      retrievedAt: new Date("2026-08-31T12:00:00.000Z"),
+      ...overrides,
+    });
+
+    it("serves what an object transmits, in hertz", async () => {
+      await database.radio.upsertMany([transmitter("a")]);
+
+      const body = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters" })).json(),
+      );
+
+      expect(body.count).toBe(1);
+      expect(body.transmitters[0]?.downlinkLowHz).toBe(145_825_000);
+      // Hertz all the way to the client. Converting to MHz in transport would bury a
+      // factor of a million in the one place it is hardest to notice.
+      expect(body.transmitters[0]?.mode).toBe("AFSK");
+    });
+
+    it("ships the licence attribution with the data", async () => {
+      await database.radio.upsertMany([transmitter("a")]);
+      const body = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters" })).json(),
+      );
+
+      // SatNOGS is CC BY-SA 4.0. A client rendering these frequencies is obliged to
+      // credit the source, and sending the text alongside makes that hard to omit.
+      expect(body.attribution).toContain("SatNOGS");
+      expect(body.provider).toBe("satnogs-db");
+    });
+
+    it("hides dead transmitters unless asked", async () => {
+      await database.radio.upsertMany([
+        transmitter("alive-one"),
+        transmitter("dead-one", { alive: false, status: "inactive" }),
+      ]);
+
+      const live = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters" })).json(),
+      );
+      expect(live.count).toBe(1);
+
+      const all = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters?includeDead=true" })).json(),
+      );
+      expect(all.count).toBe(2);
+    });
+
+    it("returns an empty list, not a 404, for an object with no radio", async () => {
+      // "This satellite publishes no transmitters" is an answer, and a different one
+      // from "no such satellite". Collapsing them would make a real gap look like a bug.
+      const response = await app.inject({ url: "/satellites/25544/transmitters" });
+      expect(response.statusCode).toBe(200);
+      expect(radioTransmittersResponseSchema.parse(response.json()).count).toBe(0);
+    });
+
+    it("404s for a satellite that does not exist", async () => {
+      const response = await app.inject({ url: "/satellites/99999/transmitters" });
+      expect(response.statusCode).toBe(404);
+    });
+
+    it("keeps the provider's update time and the retrieval time apart", async () => {
+      await database.radio.upsertMany([transmitter("a")]);
+      const body = radioTransmittersResponseSchema.parse(
+        (await app.inject({ url: "/satellites/25544/transmitters" })).json(),
+      );
+
+      expect(body.transmitters[0]?.updatedAt).toBe("2019-06-16T08:49:33.586Z");
+      expect(body.transmitters[0]?.retrievedAt).toBe("2026-08-31T12:00:00.000Z");
+    });
+  });
 
   describe("provider status", () => {
     it("reports never-succeeded before any ingestion has run", async () => {
@@ -590,6 +792,187 @@ describe("OrbitWatch API", () => {
       expect((await limited.inject({ url: "/health" })).statusCode).toBe(200);
 
       await limited.close();
+    });
+  });
+
+  // ── watchlist sync ───────────────────────────────────────────────────────
+
+  describe("watchlist sync", () => {
+    async function pair(catalogIds: readonly string[]): Promise<string> {
+      const response = await app.inject({
+        method: "POST",
+        url: "/sync/watchlist",
+        payload: { catalogIds },
+      });
+      expect(response.statusCode).toBe(200);
+      return (response.json() as { code: string }).code;
+    }
+
+    it("hands back a list to whoever holds the code", async () => {
+      const code = await pair(["25544", "20580"]);
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ catalogIds: ["25544", "20580"] });
+    });
+
+    it("mints a different code for every pairing", async () => {
+      // Fifty bits from the system CSPRNG. A repeat here would mean a broken generator,
+      // and two strangers sharing a watchlist.
+      const codes = new Set([await pair(["25544"]), await pair(["25544"]), await pair(["25544"])]);
+      expect(codes.size).toBe(3);
+    });
+
+    it("accepts the code as it was displayed, hyphen and all", async () => {
+      const code = await pair(["25544"]);
+      expect(code).toMatch(/^[0-9A-Z]{5}-[0-9A-Z]{5}$/);
+
+      // And without it, and in the case someone's keyboard produced.
+      for (const variant of [code, code.replace("-", ""), code.toLowerCase()]) {
+        const response = await app.inject({
+          method: "GET",
+          url: "/sync/watchlist",
+          headers: { "x-sync-code": variant },
+        });
+        expect(response.statusCode, variant).toBe(200);
+      }
+    });
+
+    it("answers the same way for a wrong code, a malformed one and none at all", async () => {
+      /*
+       * Telling them apart would confirm to somebody guessing that a code was
+       * well-formed but unclaimed — a free bit of feedback narrowing their search.
+       */
+      const cases = [
+        { "x-sync-code": "ZZZZZ-ZZZZZ" },
+        { "x-sync-code": "not-a-code" },
+        { "x-sync-code": "" },
+        {},
+      ];
+
+      for (const headers of cases) {
+        const response = await app.inject({ method: "GET", url: "/sync/watchlist", headers });
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toMatchObject({ error: { code: "NOT_FOUND" } });
+      }
+    });
+
+    it("replaces the list rather than merging into it", async () => {
+      // Removing a satellite has to survive a sync. A merge would resurrect every entry
+      // the user deleted as soon as the other device uploaded its copy.
+      const code = await pair(["25544", "20580"]);
+
+      const put = await app.inject({
+        method: "PUT",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+        payload: { catalogIds: ["25544"] },
+      });
+      expect(put.statusCode).toBe(200);
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+      expect(response.json()).toMatchObject({ catalogIds: ["25544"] });
+    });
+
+    it("will not let a caller claim a code of their own choosing", async () => {
+      /*
+       * PUT does not create. If it did, anyone could pick a code and own it — and the
+       * entropy argument protecting this whole feature rests on codes being generated
+       * by the server rather than chosen by a caller.
+       */
+      const response = await app.inject({
+        method: "PUT",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": "ABCDE-FGHJK" },
+        payload: { catalogIds: ["25544"] },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it("refuses anything that is not a list of catalog numbers", async () => {
+      // The one endpoint where the client decides what gets stored, so it is the one
+      // that must not become general-purpose storage.
+      for (const payload of [
+        { catalogIds: ["../../etc/passwd"] },
+        { catalogIds: [{ nope: true }] },
+        { catalogIds: "25544" },
+        { catalogIds: Array.from({ length: 501 }, (_, index) => String(index)) },
+        {},
+      ]) {
+        const response = await app.inject({ method: "POST", url: "/sync/watchlist", payload });
+        expect(response.statusCode, JSON.stringify(payload).slice(0, 40)).toBe(400);
+      }
+    });
+
+    it("syncs an empty list as an empty list", async () => {
+      // Clearing a watchlist is a legitimate thing to sync, and must not read back as
+      // "never paired" — which would resurrect the old list on the other device.
+      const code = await pair([]);
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ catalogIds: [] });
+    });
+
+    it("deletes on request, and says nothing about what was there", async () => {
+      const code = await pair(["25544"]);
+
+      const first = await app.inject({
+        method: "DELETE",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+      expect(first.statusCode).toBe(204);
+
+      const gone = await app.inject({
+        method: "GET",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": code },
+      });
+      expect(gone.statusCode).toBe(404);
+
+      // 204 again for a code that was never real: a different status would tell a
+      // guesser which codes exist.
+      const second = await app.inject({
+        method: "DELETE",
+        url: "/sync/watchlist",
+        headers: { "x-sync-code": "ZZZZZ-ZZZZZ" },
+      });
+      expect(second.statusCode).toBe(204);
+    });
+
+    it("never stores the code itself", async () => {
+      /*
+       * THE PROPERTY THE WHOLE DESIGN RESTS ON.
+       *
+       * A database dump must not yield working codes. This reaches past the API into
+       * the store and asserts that what is there is a hash and bears no resemblance to
+       * what the client was given.
+       */
+      const code = await pair(["25544"]);
+      const bare = code.replace("-", "");
+
+      const stored = await database.watchlistSync.get(
+        createHash("sha256").update(bare, "utf8").digest("hex"),
+      );
+
+      expect(stored).toBeDefined();
+      expect(stored?.codeHash).toHaveLength(64);
+      expect(stored?.codeHash).not.toContain(bare);
     });
   });
 });

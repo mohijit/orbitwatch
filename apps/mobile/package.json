@@ -2,7 +2,6 @@
   "name": "@orbitwatch/mobile",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --dev-client",
@@ -14,12 +13,31 @@
     "clean": "rimraf .expo .turbo"
   },
   "dependencies": {
+    "@babel/runtime": "^8.0.0",
+    "@expo/metro-runtime": "~55.0.12",
     "@orbitwatch/contracts": "workspace:*",
-    "@orbitwatch/orbit-core": "workspace:*"
+    "@orbitwatch/orbit-core": "workspace:*",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "~55.0.31",
+    "expo-camera": "~55.0.23",
+    "expo-constants": "~55.0.17",
+    "expo-linking": "~55.0.17",
+    "expo-location": "~55.1.14",
+    "expo-notifications": "~55.0.27",
+    "expo-router": "~55.0.18",
+    "expo-sensors": "~55.0.19",
+    "expo-status-bar": "~55.0.6",
+    "react": "19.2.0",
+    "react-native": "0.83.10",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
+    "react-native-webview": "13.16.0",
+    "whatwg-fetch": "^3.6.20"
   },
   "devDependencies": {
     "@orbitwatch/eslint-config": "workspace:*",
     "@orbitwatch/typescript-config": "workspace:*",
+    "@types/react": "^19.2.18",
     "eslint": "^9.36.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.2",

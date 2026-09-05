@@ -28,7 +28,18 @@ html, body {
 .shell__bar {
   position: absolute;
   top: 0; left: 0; right: 0;
-  z-index: 10;
+  /*
+   * Above every overlay, because two things inside it are not header-shaped.
+   *
+   * The search dialog and the observer popover are rendered as children of this bar
+   * rather than portalled, so their own z-index is confined to whatever stacking
+   * context this element establishes. At 10 they tied with the panels and lost on DOM
+   * order — which on a narrow screen meant the bottom sheet painted straight over the
+   * bottom half of a full-height search dialog. Nothing in the bar overlaps anything
+   * below it, so lifting the whole context costs nothing and stops a modal being
+   * covered by the page it is modal over.
+   */
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -167,6 +178,17 @@ html, body {
   right: 1rem;
   z-index: 10;
   width: 18rem;
+  /*
+   * Bounded, because this panel grows with what is selected.
+   *
+   * It had no height limit at all, so with an observer set and a satellite chosen it
+   * ran off the bottom of a 720-pixel window and underneath the SGP4 disclaimer, which
+   * is full-width and painted above it. The pass rows down there were visible and
+   * completely unclickable -- the footer swallowed every click. Same clearance as the
+   * panel stack, for the same reason.
+   */
+  max-height: calc(100dvh - 9rem);
+  overflow-y: auto;
   background: var(--ow-surface);
   border: 1px solid var(--ow-border);
   border-radius: 12px;
@@ -174,8 +196,27 @@ html, body {
   backdrop-filter: blur(8px);
 }
 
-.telemetry-panel__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-.telemetry-panel__catalog-id { font-family: ui-monospace, monospace; font-size: 0.85rem; color: var(--ow-accent); }
+.telemetry-panel__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem; }
+.telemetry-panel__identity { min-width: 0; }
+/* Names run long ("IPM 2 & BREEZE-M R/B"); wrap rather than widen the panel. */
+.telemetry-panel__name {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ow-text);
+  overflow-wrap: anywhere;
+}
+.telemetry-panel__designators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.15rem 0 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+.telemetry-panel__catalog-id { font-family: ui-monospace, monospace; font-size: 0.75rem; color: var(--ow-accent); cursor: help; }
+.telemetry-panel__intl-id { color: var(--ow-text-muted); cursor: help; }
 .telemetry-panel__close { background: none; border: none; color: var(--ow-text-muted); font-size: 1.1rem; cursor: pointer; line-height: 1; }
 
 .telemetry-panel__status { font-size: 0.8rem; color: var(--ow-text-muted); }
@@ -235,3 +276,1014 @@ html, body {
   cursor: pointer;
 }
 .timeline__live-button:disabled { opacity: 0.4; cursor: default; }
+
+/* ── M4: observer, look angles and passes ──────────────────────────────────────── */
+
+.observer-panel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.observer-panel__summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  background: none;
+  border: 1px solid var(--ow-border);
+  border-radius: 8px;
+  padding: 0.3rem 0.6rem;
+  color: var(--ow-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.observer-panel__label { font-size: 0.6rem; letter-spacing: 0.12em; color: var(--ow-text-muted); text-transform: uppercase; }
+.observer-panel__value { font-size: 0.75rem; font-family: ui-monospace, monospace; }
+
+.observer-panel__sky { display: flex; align-items: center; gap: 0.4rem; font-size: 0.7rem; }
+.observer-panel__lighting { padding: 0.1rem 0.4rem; border-radius: 999px; border: 1px solid currentColor; }
+.observer-panel__lighting--daylight { color: #facc15; }
+.observer-panel__lighting--twilight { color: #f4a548; }
+.observer-panel__lighting--dark { color: #7dd3fc; }
+.observer-panel__sun { color: var(--ow-text-muted); font-family: ui-monospace, monospace; }
+
+.observer-panel__body {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 30;
+  width: 21rem;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 12px;
+  padding: 0.8rem;
+  backdrop-filter: blur(8px);
+}
+
+.observer-panel__actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.observer-panel__actions button,
+.observer-panel__manual button {
+  background: rgba(53, 200, 245, 0.12);
+  border: 1px solid var(--ow-border);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  color: var(--ow-text);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.observer-panel__actions button:disabled { opacity: 0.5; cursor: default; }
+.observer-panel__actions button[aria-pressed="true"] { border-color: var(--ow-accent); color: var(--ow-accent); }
+
+.observer-panel__manual { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; align-items: end; }
+.observer-panel__manual label { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.65rem; color: var(--ow-text-muted); }
+.observer-panel__manual input {
+  background: rgba(8, 12, 20, 0.8);
+  border: 1px solid var(--ow-border);
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+  color: var(--ow-text);
+  font: inherit;
+  font-size: 0.75rem;
+  font-family: ui-monospace, monospace;
+}
+
+.observer-panel__error { margin: 0.5rem 0 0; font-size: 0.72rem; color: #f4a548; }
+.observer-panel__provenance { margin: 0.6rem 0 0; font-size: 0.68rem; line-height: 1.45; color: var(--ow-text-muted); }
+
+.shell__picking {
+  position: absolute;
+  top: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-accent);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.75rem;
+  backdrop-filter: blur(8px);
+}
+
+.telemetry-panel__observer { margin-top: 0.7rem; border-top: 1px solid var(--ow-border); padding-top: 0.6rem; }
+.telemetry-panel__section-heading {
+  margin: 0 0 0.4rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ow-text-muted);
+  font-weight: 600;
+}
+
+.look-angles__empty, .pass-list__empty { margin: 0 0 0.5rem; font-size: 0.72rem; color: var(--ow-text-muted); }
+.look-angles__horizon { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.35rem; }
+.look-angles__horizon--up { color: #4ade80; }
+.look-angles__horizon--down { color: var(--ow-text-muted); }
+.look-angles__facts { margin: 0 0 0.5rem; font-size: 0.78rem; display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.6rem; }
+.look-angles__facts dt { color: var(--ow-text-muted); font-size: 0.68rem; align-self: center; }
+.look-angles__facts dd { margin: 0; font-family: ui-monospace, monospace; }
+.look-angles__hint { color: var(--ow-text-muted); font-size: 0.65rem; font-family: inherit; }
+
+.pass-list { list-style: none; margin: 0; padding: 0; max-height: 13rem; overflow-y: auto; }
+.pass-list__item {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--ow-border);
+  font-size: 0.72rem;
+}
+.pass-list__item:last-child { border-bottom: none; }
+.pass-list__when { display: flex; gap: 0.4rem; align-items: baseline; font-family: ui-monospace, monospace; }
+.pass-list__day { color: var(--ow-text-muted); }
+.pass-list__duration { color: var(--ow-text-muted); margin-left: auto; }
+.pass-list__geometry { display: flex; gap: 0.6rem; color: var(--ow-text-muted); font-family: ui-monospace, monospace; }
+.pass-list__visibility { justify-self: start; font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.pass-list__visibility--likely-visible { color: #4ade80; }
+.pass-list__visibility--possibly-visible { color: #facc15; }
+.pass-list__visibility--daylight { color: #f4a548; }
+.pass-list__visibility--satellite-in-shadow { color: var(--ow-text-muted); }
+.pass-list__visibility--not-optically-favourable { color: var(--ow-text-muted); }
+
+/*
+ * The whole row is the control. A separate "expand" affordance would put a small hit
+ * target next to a large inert one, which is worse on a phone than making the row
+ * itself pressable.
+ */
+.pass-list__row {
+  /*
+   * A real grid, not `display: contents`. Contents would let the row's children take
+   * part in the list item's own grid, which lays out identically — but Chrome and
+   * Safari drop a `display: contents` button out of the accessibility tree entirely,
+   * so the control would be invisible to a screen reader and to keyboard focus.
+   */
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pass-list__row:focus-visible { outline: 2px solid var(--ow-accent); outline-offset: 2px; }
+.pass-list__item:hover { background: rgba(53, 200, 245, 0.05); }
+
+.sky-chart { margin: 0.5rem 0 0.25rem; }
+.sky-chart__svg { display: block; width: 100%; max-width: 15rem; margin: 0 auto; }
+.sky-chart__horizon { fill: rgba(53, 200, 245, 0.04); stroke: var(--ow-border); stroke-width: 1; }
+.sky-chart__ring { fill: none; stroke: var(--ow-border); stroke-width: 0.6; stroke-dasharray: 2 3; }
+.sky-chart__ring-label { fill: var(--ow-text-muted); font-size: 6px; font-family: ui-monospace, monospace; }
+.sky-chart__cardinal { fill: var(--ow-text-muted); font-size: 8px; font-weight: 600; }
+
+.sky-chart__arc { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sky-chart__arc--lit { stroke: #4ade80; }
+/* Dashed AND dimmed: the difference must survive being printed, or seen by someone
+   who cannot distinguish the two colours. */
+.sky-chart__arc--shadow { stroke: var(--ow-text-muted); stroke-dasharray: 3 3; opacity: 0.7; }
+
+.sky-chart__marker { stroke-width: 1.2; }
+.sky-chart__marker--aos { fill: var(--ow-bg); stroke: #4ade80; }
+.sky-chart__marker--los { fill: var(--ow-bg); stroke: var(--ow-text-muted); }
+.sky-chart__marker--max { fill: var(--ow-accent); stroke: var(--ow-bg); }
+.sky-chart__marker--shadow { fill: var(--ow-bg); stroke: #facc15; }
+
+.sky-chart__caption { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.35rem; font-size: 0.62rem; color: var(--ow-text-muted); }
+.sky-chart__legend { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.sky-chart__key { display: inline-block; width: 0.7rem; height: 0; border-top-width: 2px; border-top-style: solid; }
+.sky-chart__key--lit { border-top-color: #4ade80; }
+.sky-chart__key--shadow { border-top-color: var(--ow-text-muted); border-top-style: dashed; margin-left: 0.4rem; }
+.sky-chart__orientation { line-height: 1.35; }
+.sky-chart__empty { margin: 0.4rem 0 0; font-size: 0.65rem; color: var(--ow-text-muted); }
+
+/* ── M4: visible tonight ───────────────────────────────────────────────────────── */
+
+
+
+.visible-tonight__header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.visible-tonight__header .telemetry-panel__section-heading { margin: 0; }
+.visible-tonight__refresh {
+  background: none;
+  border: 1px solid var(--ow-border);
+  border-radius: 6px;
+  padding: 0.15rem 0.45rem;
+  color: var(--ow-text-muted);
+  font: inherit;
+  font-size: 0.65rem;
+  cursor: pointer;
+}
+.visible-tonight__refresh:disabled { opacity: 0.5; cursor: default; }
+
+.visible-tonight__empty { margin: 0.4rem 0 0; font-size: 0.72rem; line-height: 1.5; color: var(--ow-text-muted); }
+.visible-tonight__window { margin: 0.35rem 0 0.5rem; font-size: 0.68rem; color: var(--ow-text-muted); font-family: ui-monospace, monospace; }
+
+.visible-tonight__list { list-style: none; margin: 0; padding: 0; }
+.visible-tonight__item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.1rem 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--ow-border);
+  font-size: 0.73rem;
+  align-items: baseline;
+}
+.visible-tonight__item:last-child { border-bottom: none; }
+.visible-tonight__time { font-family: ui-monospace, monospace; color: var(--ow-accent); }
+/* Name and number share the middle column; the name gives way, the number does not. */
+.visible-tonight__identity { display: flex; align-items: baseline; gap: 0.35rem; min-width: 0; }
+.visible-tonight__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Without this a flex item refuses to shrink below its content, so a long name
+     pushes the number out of the row instead of truncating itself. */
+  min-width: 0;
+}
+.visible-tonight__catalog-id {
+  flex: none;
+  font-family: ui-monospace, monospace;
+  font-size: 0.65rem;
+  color: var(--ow-text-muted);
+  cursor: help;
+}
+.visible-tonight__grade { font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.visible-tonight__grade--likely { color: #4ade80; }
+.visible-tonight__grade--possible { color: #facc15; }
+.visible-tonight__geometry {
+  grid-column: 1 / -1;
+  color: var(--ow-text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.68rem;
+}
+
+.visible-tonight__method { margin: 0.6rem 0 0; font-size: 0.65rem; line-height: 1.5; color: var(--ow-text-muted); }
+.visible-tonight__method code { font-size: 0.95em; color: var(--ow-text); }
+
+/* ── prose pages (methodology, about) ──────────────────────────────────────────── */
+
+.prose-page {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+.prose-page__back { font-size: 0.8rem; margin: 0 0 2rem; }
+.prose-page__back a { color: var(--ow-accent); text-decoration: none; }
+.prose-page__back a:hover { text-decoration: underline; }
+.prose-page h1 { font-size: 1.6rem; margin: 0 0 0.75rem; letter-spacing: -0.01em; }
+.prose-page h2 { font-size: 1.05rem; margin: 2.2rem 0 0.6rem; letter-spacing: 0.01em; }
+.prose-page__lead { color: var(--ow-text-muted); font-size: 1rem; }
+.prose-page a { color: var(--ow-accent); }
+.prose-page code {
+  background: rgba(53, 200, 245, 0.1);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+
+.prose-page__terms dt { font-weight: 600; margin-top: 0.9rem; color: var(--ow-text); }
+.prose-page__terms dd { margin: 0.15rem 0 0; color: var(--ow-text-muted); }
+
+.prose-page__table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }
+.prose-page__table th, .prose-page__table td {
+  text-align: left;
+  padding: 0.5rem 0.6rem 0.5rem 0;
+  border-bottom: 1px solid var(--ow-border);
+  vertical-align: top;
+}
+.prose-page__table th { color: var(--ow-text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.prose-page__table td:last-child { color: var(--ow-text-muted); }
+
+.prose-page__caveats { padding-left: 1.1rem; }
+.prose-page__caveats li { margin-bottom: 0.7rem; color: var(--ow-text-muted); }
+.prose-page__caveats strong { color: var(--ow-text); }
+
+.agreement__verdict {
+  border-left: 3px solid var(--ow-border);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.95rem;
+}
+.agreement__verdict--ok { border-left-color: #4ade80; color: #4ade80; }
+.agreement__verdict--fail { border-left-color: #f4a548; color: #f4a548; }
+
+/*
+ * Visible only to assistive technology.
+ *
+ * Not `display: none` and not `visibility: hidden`: both remove the element from the
+ * accessibility tree as well as the screen, which would silence the very announcements
+ * this class exists to make. Clipping to a 1px box keeps it rendered and readable.
+ */
+.shell__visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Off-screen until focused, then the first thing on the page. */
+.shell__skip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  transform: translateY(-120%);
+  background: var(--ow-accent);
+  color: var(--ow-bg);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0 0 6px 0;
+  text-decoration: none;
+}
+.shell__skip:focus { transform: translateY(0); }
+
+/*
+ * A visible focus ring on the globe.
+ *
+ * The globe fills the viewport, so without this a keyboard user has no way to know
+ * focus has landed on it — and the arrow keys would then appear to do nothing for a
+ * reason they cannot see. `inset` because an outline outside a full-bleed element is
+ * off-screen.
+ */
+.globe-canvas:focus-visible {
+  outline: 2px solid var(--ow-accent);
+  outline-offset: -2px;
+}
+
+/*
+ * Respect a stated preference for less motion.
+ *
+ * The globe itself keeps animating — it is the content, and freezing it would remove
+ * the information rather than the decoration — but nothing else should slide or fade.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .shell__skip { transition: none; }
+}
+
+.radio-panel { margin-top: 0.35rem; }
+.radio-panel__note { margin: 0; font-size: 0.72rem; color: var(--ow-text-muted); line-height: 1.4; }
+.radio-panel__note--error { color: #f4a548; }
+.radio-panel__list { list-style: none; margin: 0; padding: 0; max-height: 11rem; overflow-y: auto; }
+.radio-panel__list:focus-visible { outline: 2px solid var(--ow-accent); outline-offset: 2px; }
+.radio-panel__item {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--ow-border);
+  font-size: 0.72rem;
+}
+.radio-panel__item:last-child { border-bottom: none; }
+.radio-panel__description { color: var(--ow-text); }
+/* Monospace so the digits line up: these are read as a column and typed into a radio. */
+.radio-panel__frequencies {
+  display: flex;
+  gap: 0.7rem;
+  font-family: ui-monospace, monospace;
+  color: var(--ow-accent);
+}
+.radio-panel__uplink { color: var(--ow-text-muted); }
+.radio-panel__mode { color: var(--ow-text-muted); font-size: 0.65rem; }
+.radio-panel__attribution { margin: 0.4rem 0 0; font-size: 0.6rem; line-height: 1.4; color: var(--ow-text-muted); }
+
+.shell__badge--error { color: #f4a548; }
+
+.space-weather { margin-bottom: 0.75rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--ow-border); }
+.space-weather__row { display: flex; align-items: baseline; gap: 0.7rem; font-family: ui-monospace, monospace; font-size: 0.78rem; }
+.space-weather__kp { font-weight: 600; }
+/* NOAA's own bands: 5 is the G1 storm threshold, not a gradient we invented. */
+.space-weather__kp--quiet { color: #4ade80; }
+.space-weather__kp--unsettled { color: #facc15; }
+.space-weather__kp--storm { color: #f4a548; }
+.space-weather__wind, .space-weather__scales { color: var(--ow-text-muted); }
+.space-weather__meaning { margin: 0.3rem 0 0; font-size: 0.68rem; line-height: 1.45; color: var(--ow-text-muted); }
+.space-weather__note { margin: 0.2rem 0 0; font-size: 0.68rem; line-height: 1.45; color: #f4a548; }
+.space-weather__attribution { margin: 0.3rem 0 0; font-size: 0.6rem; line-height: 1.4; color: var(--ow-text-muted); }
+
+.launches { margin-bottom: 0.75rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--ow-border); }
+.launches__note { margin: 0.2rem 0 0; font-size: 0.68rem; color: var(--ow-text-muted); }
+.launches__list { list-style: none; margin: 0; padding: 0; }
+.launches__item { display: grid; gap: 0.05rem; padding: 0.3rem 0; border-bottom: 1px solid var(--ow-border); font-size: 0.7rem; }
+.launches__item:last-child { border-bottom: none; }
+.launches__when { color: var(--ow-accent); font-family: ui-monospace, monospace; font-size: 0.68rem; }
+/* A stated imprecision must not look like part of the time. */
+.launches__qualifier { color: var(--ow-text-muted); font-style: italic; }
+.launches__name { color: var(--ow-text); }
+.launches__detail { color: var(--ow-text-muted); font-size: 0.63rem; }
+.launches__attribution { margin: 0.3rem 0 0; font-size: 0.6rem; color: var(--ow-text-muted); }
+
+.solar-events { margin-bottom: 0.75rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--ow-border); }
+.solar-events__note { margin: 0.2rem 0 0; font-size: 0.68rem; color: var(--ow-text-muted); }
+.solar-events__list { list-style: none; margin: 0; padding: 0; }
+.solar-events__item {
+  display: grid;
+  grid-template-columns: 2.6rem auto;
+  gap: 0 0.5rem;
+  padding: 0.25rem 0;
+  font-size: 0.68rem;
+  align-items: baseline;
+}
+.solar-events__type {
+  font-family: ui-monospace, monospace;
+  font-size: 0.62rem;
+  color: var(--ow-text-muted);
+  border: 1px solid var(--ow-border);
+  border-radius: 3px;
+  text-align: center;
+  padding: 0.05rem 0;
+  cursor: help;
+}
+/* The two types with a statable consequence for objects in low orbit. */
+.solar-events__type--orbital { color: var(--ow-warn, #facc15); border-color: #facc15; }
+.solar-events__when { color: var(--ow-text-muted); font-family: ui-monospace, monospace; font-size: 0.62rem; }
+.solar-events__label { grid-column: 2; color: var(--ow-text); }
+.solar-events__footnote { margin: 0.35rem 0 0; font-size: 0.62rem; line-height: 1.45; color: var(--ow-text-muted); }
+.solar-events__attribution { margin: 0.25rem 0 0; font-size: 0.6rem; color: var(--ow-text-muted); }
+
+/* The dated-imagery caveat. Deliberately not muted into invisibility. */
+
+/* ── panel rail ──────────────────────────────────────────────────────────────── */
+
+.panel-rail {
+  position: absolute;
+  top: 4rem;
+  left: 1rem;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 10px;
+  padding: 0.3rem;
+  backdrop-filter: blur(8px);
+}
+.panel-rail__button,
+.panel-rail__hide {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--ow-text-muted);
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+.panel-rail__button:hover,
+.panel-rail__hide:hover { background: rgba(148, 176, 214, 0.08); color: var(--ow-text); }
+.panel-rail__button--on { color: var(--ow-accent); background: rgba(53, 200, 245, 0.1); }
+.panel-rail__button:focus-visible,
+.panel-rail__hide:focus-visible,
+.panel-rail__restore:focus-visible { outline: 2px solid var(--ow-accent); outline-offset: 2px; }
+.panel-rail__glyph { width: 1rem; text-align: center; font-size: 0.8rem; }
+.panel-rail__hide { border-top: 1px solid var(--ow-border); border-radius: 0 0 6px 6px; margin-top: 0.15rem; padding-top: 0.4rem; }
+
+/* The single control left when everything is hidden. Small, but never absent. */
+.panel-rail__restore {
+  position: absolute;
+  top: 4rem;
+  left: 1rem;
+  z-index: 10;
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 8px;
+  color: var(--ow-text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.panel-rail__restore:hover { color: var(--ow-text); }
+
+/* ── panel stack ─────────────────────────────────────────────────────────────── */
+
+.panel-stack {
+  position: absolute;
+  top: 4rem;
+  /* Clear of the rail, which is 1rem from the edge and about 9rem wide. */
+  left: 11rem;
+  z-index: 9;
+  width: 20rem;
+  max-height: calc(100dvh - 12rem);
+  overflow-y: auto;
+  display: grid;
+  gap: 0.5rem;
+}
+.panel-stack__panel {
+  background: var(--ow-surface);
+  border: 1px solid var(--ow-border);
+  border-radius: 12px;
+  padding: 0.8rem;
+  backdrop-filter: blur(8px);
+}
+/* Each panel is its own card now, so the internal dividers between them are noise. */
+.panel-stack__panel .space-weather,
+.panel-stack__panel .solar-events,
+.panel-stack__panel .launches {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* ── imagery picker ──────────────────────────────────────────────────────────── */
+
+.imagery-picker__group { border: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+.imagery-picker__option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.4rem;
+  font-size: 0.7rem;
+  color: var(--ow-text);
+  cursor: pointer;
+}
+.imagery-picker__option input { accent-color: var(--ow-accent); margin-top: 0.15rem; }
+.imagery-picker__label { font-weight: 500; }
+.imagery-picker__description { grid-column: 2; font-size: 0.62rem; line-height: 1.4; color: var(--ow-text-muted); }
+/* The dated-imagery caveat. Deliberately not muted into invisibility. */
+.imagery-picker__date {
+  margin: 0.5rem 0 0;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  color: var(--ow-text);
+  border-left: 2px solid var(--ow-accent);
+  padding-left: 0.5rem;
+}
+
+/* ── offline banner ──────────────────────────────────────────────────────────── */
+
+/*
+ * Sits under the header, over the globe, spanning the width. Amber rather than red:
+ * being offline is a condition to understand, not a failure to react to, and the app
+ * is still useful in it.
+ */
+.offline-banner {
+  position: absolute;
+  top: 3.1rem;
+  left: 0;
+  right: 0;
+  /* Above the panel rail and the telemetry panel, both at 10: the banner qualifies
+     what they are showing, so it must never end up behind one of them. */
+  z-index: 11;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.6rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: #f4d9a8;
+  background: rgba(58, 42, 12, 0.94);
+  border-bottom: 1px solid rgba(244, 165, 72, 0.45);
+  backdrop-filter: blur(8px);
+}
+.offline-banner__headline { font-weight: 600; letter-spacing: 0.04em; color: #f4a548; }
+.offline-banner__detail { color: #e6d3b4; }
+/* Nothing cached at all is the one case where the app cannot do its job, so it reads
+   as an error rather than as a qualification. */
+.offline-banner--empty {
+  color: #f6c3c3;
+  background: rgba(58, 16, 16, 0.94);
+  border-bottom-color: rgba(248, 113, 113, 0.45);
+}
+.offline-banner--empty .offline-banner__headline { color: #f87171; }
+.offline-banner--empty .offline-banner__detail { color: #eec6c6; }
+
+/* ── M8.5: the sheet wrapper, and the narrow-viewport layout ───────────────────── */
+
+/*
+ * WIDE: an invisible box the size of the shell.
+ *
+ * The telemetry panel and the panel stack used to be siblings positioned against
+ * `.shell`. They now live inside this wrapper, which is given the same geometry so
+ * their `top`/`right`/`left` offsets resolve to exactly the same place — the wide
+ * layout is unchanged, and there is one DOM for both arrangements rather than two
+ * component trees and two accessibility trees.
+ *
+ * Click-through, or a full-screen transparent box over the globe would swallow every
+ * drag; the cards inside take their pointer events back.
+ */
+.bottom-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+.bottom-sheet > .bottom-sheet__body { display: contents; }
+.bottom-sheet__handle { display: none; }
+.telemetry-panel,
+.panel-stack { pointer-events: auto; }
+
+/* The scrubber is always present on a wide screen; `contents` keeps its children
+   direct flex items of `.timeline`, which is what `align-self` on the button needs. */
+.timeline__controls { display: contents; }
+.timeline__disclosure { display: none; }
+
+/*
+ * The SGP4 disclaimer does not intercept clicks.
+ *
+ * It is a full-width strip painted above the globe at z-index 10, so every click in the
+ * bottom 3rem of the page was landing on a paragraph — including on panel rows that
+ * were plainly visible underneath it. It is text to read, not a surface to hit.
+ */
+.shell__note { pointer-events: none; }
+.shell__note a { pointer-events: auto; color: var(--ow-accent); }
+
+/* ── narrow viewport: globe, sheet, tab bar ───────────────────────────────────── */
+
+/*
+ * Width, not `pointer: coarse` — the constraint is horizontal space, so a narrow
+ * desktop window gets the same treatment, and an emulated viewport can exercise it.
+ * Kept in step with NARROW_VIEWPORT in `hooks/use-media-query.ts`.
+ */
+@media (max-width: 44rem) {
+  /* Header: one row, and everything in it on screen. */
+  .shell__bar {
+    gap: 0.4rem;
+    padding: 0.5rem 0.6rem;
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+  .shell__brand { flex: none; font-size: 0.72rem; letter-spacing: 0.06em; }
+  .command-trigger { flex: none; padding: 0.3rem 0.5rem; }
+
+  /* The coordinates give way; everything either side of them holds its width. */
+  .observer-panel { flex: 1 1 auto; min-width: 0; }
+  .observer-panel__summary { width: 100%; padding: 0.25rem 0.4rem; }
+  .observer-panel__label { font-size: 0.55rem; }
+  .observer-panel__value {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /*
+   * The sky reading is dropped from the header, not from the app: "Visible tonight"
+   * states the darkness window, and the observer popover states the sun altitude. A
+   * header with no room for the catalog count is worse than one without a second
+   * reading of the same fact.
+   */
+  .observer-panel__sky { display: none; }
+  .shell__badge { flex: none; font-size: 0.6rem; padding: 0.2rem 0.45rem; }
+
+  /*
+   * A full-width card rather than a 21rem box hanging off a trigger that sits two
+   * thirds of the way across the screen — which put most of it past the right edge.
+   * Fixed, so it is measured against the viewport and not against a header that is
+   * only 3rem tall.
+   */
+  .observer-panel__body {
+    position: fixed;
+    top: 3.4rem;
+    left: 0.6rem;
+    right: 0.6rem;
+    width: auto;
+    max-height: 70dvh;
+    overflow-y: auto;
+  }
+
+  /*
+   * Timeline: a status line under the header, not a scrubber across the bottom.
+   *
+   * The clock and the LIVE/SIMULATION state are read constantly and carry the central
+   * claim about which instant is on screen, so they stay. The 48-hour scrubber — about
+   * eight minutes per pixel — goes behind a disclosure, because it is a precision
+   * control and a thumb is the least precise pointer there is.
+   *
+   * The offline banner occupies this same strip when it appears. Rather than let one
+   * paint over the other, the sibling combinator moves everything below it down: the
+   * banner renders `null` when there is nothing to say, so its mere presence in the
+   * document is the condition, and no JavaScript needs to know about it.
+   */
+  .timeline {
+    top: 3.3rem;
+    bottom: auto;
+    left: 0.6rem;
+    right: 0.6rem;
+    width: auto;
+    transform: none;
+    padding: 0.35rem 0.6rem;
+    gap: 0.35rem;
+  }
+  .timeline__mode { flex-wrap: wrap; gap: 0.25rem 0.6rem; }
+  .timeline__clock { font-size: 0.62rem; }
+  .timeline__disclosure {
+    display: inline-block;
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--ow-border);
+    border-radius: 6px;
+    color: var(--ow-accent);
+    font: inherit;
+    font-size: 0.62rem;
+    padding: 0.15rem 0.5rem;
+    cursor: pointer;
+  }
+  .timeline[data-controls="closed"] .timeline__controls { display: none; }
+
+  /* Clear of the header and the timeline strip. */
+  .shell__picking { top: 7.2rem; }
+
+  /* Everything in the top strip steps down when the offline banner is present. */
+  .offline-banner ~ .timeline { top: 7.4rem; }
+  .offline-banner ~ .shell__picking { top: 11.3rem; }
+
+  /*
+   * THE SHEET.
+   *
+   * Bottom-anchored and never taller than "most of the screen": the globe is the
+   * product, and a panel that covers it entirely is a different app. It stops above the
+   * disclaimer, which stops above the tab bar, so all three are visible at once rather
+   * than stacked on top of one another.
+   */
+  .bottom-sheet {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: calc(5.7rem + env(safe-area-inset-bottom));
+    z-index: 12;
+    display: flex;
+    flex-direction: column;
+    pointer-events: auto;
+    background: var(--ow-surface);
+    border-top: 1px solid var(--ow-border);
+    border-radius: 14px 14px 0 0;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+    transition: height 160ms ease;
+  }
+  .bottom-sheet--peek { height: 9rem; }
+  .bottom-sheet--half { height: 45dvh; }
+  .bottom-sheet--full { height: calc(100dvh - 12rem); }
+
+  /*
+   * The handle is a button first and a drag target second. Full width, so it is a large
+   * target despite being short, and `touch-action: none` because a vertical drag here
+   * is the gesture rather than a scroll of whatever is underneath.
+   */
+  .bottom-sheet__handle {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 34px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .bottom-sheet__grip {
+    display: block;
+    width: 2.5rem;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--ow-border);
+  }
+  .bottom-sheet__handle:focus-visible { outline: 2px solid var(--ow-accent); outline-offset: -4px; }
+
+  .bottom-sheet > .bottom-sheet__body {
+    display: grid;
+    align-content: start;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* Stops a scroll that reaches the end of the sheet from turning into a pull to
+       refresh, which would discard the page the sheet is describing. */
+    overscroll-behavior: contain;
+    padding: 0 0.75rem 0.75rem;
+  }
+
+  /*
+   * Inside the sheet the cards stop being cards. They already sit on a surface with a
+   * border and a blur; repeating that per panel would be three nested boxes on a 390px
+   * screen.
+   */
+  .telemetry-panel,
+  .panel-stack {
+    position: static;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    background: none;
+    border: none;
+    border-radius: 0;
+    backdrop-filter: none;
+    padding: 0;
+  }
+  .panel-stack__panel {
+    background: none;
+    border: none;
+    border-radius: 0;
+    backdrop-filter: none;
+    padding: 0;
+  }
+  /* One rule instead of a border on each: the only place a divider is needed is
+     between a selected object and the panel below it. */
+  .telemetry-panel + .panel-stack {
+    border-top: 1px solid var(--ow-border);
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+  }
+
+  /*
+   * THE TAB BAR.
+   *
+   * The same rail, laid on its side at the bottom of the screen, because every control
+   * in this app was in the top 64px — the least reachable part of a phone held in one
+   * hand.
+   */
+  .panel-rail {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 14;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 0;
+    border: none;
+    border-top: 1px solid var(--ow-border);
+    border-radius: 0;
+    padding: 0 0.2rem;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(7, 11, 20, 0.94);
+  }
+  .panel-rail__button {
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.1rem;
+    min-height: 44px;
+    padding: 0.35rem 0.15rem;
+    text-align: center;
+    white-space: normal;
+  }
+  .panel-rail__glyph { font-size: 0.95rem; }
+  .panel-rail__label { font-size: 0.55rem; line-height: 1.1; letter-spacing: 0.01em; }
+  /*
+   * No "hide all" here. Collapsing the sheet is already how you put panels away, and a
+   * control that removed the tab bar would take the only navigation with it — the exact
+   * trap `panel-rail__restore` exists to avoid, reintroduced in a worse place.
+   */
+  .panel-rail__hide { display: none; }
+  /*
+   * When the rail IS hidden, the way back moves to where the rail was rather than
+   * staying at the top left, where it would sit under the timeline strip and look like
+   * part of it. Bottom right, in thumb reach, which is where the controls it restores
+   * live.
+   */
+  .panel-rail__restore {
+    position: fixed;
+    top: auto;
+    left: auto;
+    right: 0.75rem;
+    bottom: calc(0.6rem + env(safe-area-inset-bottom));
+    z-index: 14;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /*
+   * The disclaimer keeps its own strip above the tab bar rather than being covered by
+   * the sheet. It is the central honesty claim; one line is the most that fits, so the
+   * rest lives behind the link.
+   */
+  .shell__note {
+    bottom: calc(0.3rem + env(safe-area-inset-bottom));
+    padding: 0.3rem 0.75rem;
+    font-size: 0.58rem;
+    line-height: 1.35;
+    background: rgba(7, 11, 20, 0.86);
+  }
+  /* Clears the tab bar when there is one. Same sibling trick as the offline banner:
+     the rail renders as a lone restore button when hidden, so its presence is the
+     condition and nothing has to be told about it. */
+  .panel-rail ~ .shell__note { bottom: calc(3.4rem + env(safe-area-inset-bottom)); }
+
+  /*
+   * Search fills the screen, with the input pinned above the results.
+   *
+   * Under the old 12vh offset the virtual keyboard covered the list the user was typing
+   * to filter. Paired with `interactiveWidget: "resizes-content"` in `layout.tsx`,
+   * `100dvh` here means the space the keyboard has actually left.
+   */
+  .command-palette-overlay { padding-top: 0; align-items: stretch; }
+  .command-palette {
+    width: 100%;
+    max-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  .command-palette__results { flex: 1 1 auto; max-height: none; }
+
+  .sky-chart__svg { max-width: 100%; }
+}
+
+/*
+ * ── touch input ───────────────────────────────────────────────────────────────────
+ *
+ * A different question from screen width: a 24-pixel control is unreliable under a
+ * fingertip on any size of display, and 44 is the figure both platform guidelines
+ * settle on. Sized rather than padded, so nothing reflows around it.
+ */
+@media (pointer: coarse) {
+  .panel-rail__button,
+  .panel-rail__hide,
+  .panel-rail__restore,
+  .timeline__live-button,
+  .timeline__disclosure,
+  .visible-tonight__refresh,
+  .observer-panel__summary,
+  .observer-panel__actions button,
+  .observer-panel__manual button,
+  .command-trigger,
+  .command-palette__result,
+  .pass-list__row {
+    min-height: 44px;
+  }
+  .telemetry-panel__close { min-height: 44px; min-width: 44px; }
+  /* A keyboard shortcut is not an affordance on a device with no keyboard. */
+  .command-trigger kbd { display: none; }
+  /* Comfortably above a fingertip, which is what makes a list scannable rather than a
+     set of near-misses. */
+  .visible-tonight__item { padding: 0.5rem 0; }
+}
+
+/* ── device benchmark (not a product surface) ─────────────────────────────────── */
+
+.device-bench { position: relative; min-height: 100dvh; }
+/* Behind the panel and faint: the globe has to be rendering for the measurement to
+   mean anything, but nobody is looking at it. */
+.device-bench__globe { position: absolute; inset: 0; opacity: 0.25; }
+.device-bench__panel {
+  position: relative;
+  z-index: 2;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+}
+.device-bench__title { font-size: 1.05rem; margin: 0 0 0.4rem; }
+.device-bench__status { margin: 0 0 0.75rem; font-size: 0.8rem; color: var(--ow-text-muted); }
+.device-bench__run {
+  min-height: 44px;
+  padding: 0 1.2rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ow-bg);
+  background: var(--ow-accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.device-bench__run:disabled { opacity: 0.5; cursor: default; }
+.device-bench__table {
+  width: 100%;
+  margin-top: 1rem;
+  border-collapse: collapse;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+.device-bench__table th,
+.device-bench__table td {
+  text-align: right;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--ow-border);
+}
+.device-bench__table th { color: var(--ow-text-muted); font-weight: 600; font-size: 0.65rem; }
+.device-bench__table th:first-child,
+.device-bench__table td:first-child { text-align: left; }
+.device-bench__note {
+  margin-top: 1rem;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--ow-text-muted);
+}

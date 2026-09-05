@@ -4,14 +4,28 @@ import type {
   Database,
   ElementQuery,
   IngestionLeaseRepository,
+  GroundStationRecord,
+  GroundStationRepository,
+  LaunchRecord,
+  LaunchRepository,
+  SolarEventRecord,
+  SolarEventRepository,
   OrbitalElementRecord,
   OrbitalElementRepository,
   ProviderRunRecord,
   ProviderRunRepository,
   ProviderRunStatus,
+  RadioRepository,
+  RadioTransmitter,
   SatelliteFilter,
+  SpaceWeatherObservation,
+  SpaceWeatherRepository,
   SatelliteRecord,
   SatelliteRepository,
+  SatelliteGroupMembership,
+  SatelliteGroupRepository,
+  WatchlistSyncRecord,
+  WatchlistSyncRepository,
 } from "./repositories.js";
 
 /**
@@ -31,6 +45,13 @@ import type {
 export class InMemoryDatabase implements Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
+  readonly groups: SatelliteGroupRepository;
+  readonly radio: RadioRepository;
+  readonly spaceWeather: SpaceWeatherRepository;
+  readonly launches: LaunchRepository;
+  readonly stations: GroundStationRepository;
+  readonly solarEvents: SolarEventRepository;
+  readonly watchlistSync: WatchlistSyncRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
 
@@ -38,6 +59,14 @@ export class InMemoryDatabase implements Database {
   readonly #elements: OrbitalElementRecord[] = [];
   readonly #runs: ProviderRunRecord[] = [];
   readonly #leases = new Map<string, { holder: string; expiresAt: Date }>();
+  /** Keyed `provider|group|catalogId`; none of the three can contain a pipe. */
+  readonly #groups = new Map<string, SatelliteGroupMembership>();
+  readonly #transmitters = new Map<string, RadioTransmitter>();
+  readonly #spaceWeather = new Map<string, SpaceWeatherObservation>();
+  readonly #launches = new Map<string, LaunchRecord>();
+  readonly #stations = new Map<string, GroundStationRecord>();
+  readonly #solarEvents = new Map<string, SolarEventRecord>();
+  readonly #watchlistSync = new Map<string, WatchlistSyncRecord>();
   #nextId = 1;
   readonly #now: () => Date;
 
@@ -45,6 +74,13 @@ export class InMemoryDatabase implements Database {
     this.#now = options.now ?? (() => new Date());
     this.satellites = this.#createSatelliteRepository();
     this.elements = this.#createElementRepository();
+    this.groups = this.#createGroupRepository();
+    this.radio = this.#createRadioRepository();
+    this.spaceWeather = this.#createSpaceWeatherRepository();
+    this.launches = this.#createLaunchRepository();
+    this.stations = this.#createStationRepository();
+    this.solarEvents = this.#createSolarEventRepository();
+    this.watchlistSync = this.#createWatchlistSyncRepository();
     this.providerRuns = this.#createProviderRunRepository();
     this.leases = this.#createLeaseRepository();
   }
@@ -336,6 +372,248 @@ export class InMemoryDatabase implements Database {
           if (best === undefined || isLaterRun(run, best)) best = run;
         }
         return best;
+      },
+    };
+  }
+
+  #createGroupRepository(): SatelliteGroupRepository {
+    const groups = this.#groups;
+    const key = (provider: string, group: string, catalogId: string): string =>
+      `${provider}|${group}|${catalogId}`;
+
+    return {
+      record: async (provider, groupName, catalogIds, seenAt) => {
+        let added = 0;
+        let refreshed = 0;
+        for (const catalogId of catalogIds) {
+          const composite = key(provider, groupName, catalogId);
+          const existing = groups.get(composite);
+          if (existing === undefined) {
+            groups.set(composite, {
+              catalogId,
+              provider,
+              groupName,
+              firstSeenAt: seenAt,
+              lastSeenAt: seenAt,
+            });
+            added += 1;
+          } else {
+            // firstSeenAt is never moved forward: it records when membership began.
+            groups.set(composite, { ...existing, lastSeenAt: seenAt });
+            refreshed += 1;
+          }
+        }
+        return { added, refreshed };
+      },
+
+      members: async (provider, groupName, options = {}) => {
+        const since = options.seenSince;
+        return [...groups.values()]
+          .filter(
+            (member) =>
+              member.provider === provider &&
+              member.groupName === groupName &&
+              (since === undefined || member.lastSeenAt.getTime() >= since.getTime()),
+          )
+          .sort((a, b) => (a.catalogId < b.catalogId ? -1 : a.catalogId > b.catalogId ? 1 : 0));
+      },
+    };
+  }
+
+  #createRadioRepository(): RadioRepository {
+    const transmitters = this.#transmitters;
+    const now = this.#now;
+
+    return {
+      upsertMany: async (incoming) => {
+        let inserted = 0;
+        let updated = 0;
+        for (const transmitter of incoming) {
+          const existing = transmitters.get(transmitter.uuid);
+          if (existing === undefined) {
+            transmitters.set(transmitter.uuid, {
+              ...transmitter,
+              firstSeenAt: now(),
+              lastSeenAt: now(),
+            });
+            inserted += 1;
+          } else {
+            // firstSeenAt is never moved forward: it records when we first saw this
+            // transmitter, which a later refresh does not change.
+            transmitters.set(transmitter.uuid, {
+              ...transmitter,
+              firstSeenAt: existing.firstSeenAt,
+              lastSeenAt: now(),
+            });
+            updated += 1;
+          }
+        }
+        return { inserted, updated };
+      },
+
+      forSatellite: async (catalogId, options = {}) =>
+        [...transmitters.values()]
+          .filter(
+            (transmitter) =>
+              transmitter.catalogId === catalogId &&
+              (options.includeDead === true || transmitter.alive),
+          )
+          // Downlink ascending: a user scanning the list is looking for a band, and an
+          // arbitrary order makes them read every row.
+          .sort((a, b) => (a.downlinkLowHz ?? 0) - (b.downlinkLowHz ?? 0)),
+
+      count: async () => transmitters.size,
+    };
+  }
+
+  #createSpaceWeatherRepository(): SpaceWeatherRepository {
+    const observations = this.#spaceWeather;
+    const key = (source: string, at: Date): string => `${source}|${at.toISOString()}`;
+
+    return {
+      record: async (incoming) => {
+        let inserted = 0;
+        let updated = 0;
+        for (const observation of incoming) {
+          const composite = key(observation.source, observation.observedAt);
+          if (observations.has(composite)) updated += 1;
+          else inserted += 1;
+          observations.set(composite, observation);
+        }
+        return { inserted, updated };
+      },
+
+      latest: async (source) =>
+        [...observations.values()]
+          .filter((observation) => observation.source === source)
+          .sort((a, b) => b.observedAt.getTime() - a.observedAt.getTime())[0],
+
+      since: async (source, from) =>
+        [...observations.values()]
+          .filter(
+            (observation) =>
+              observation.source === source &&
+              observation.observedAt.getTime() >= from.getTime(),
+          )
+          .sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime()),
+    };
+  }
+
+  #createLaunchRepository(): LaunchRepository {
+    const launches = this.#launches;
+
+    return {
+      upsertMany: async (incoming) => {
+        let inserted = 0;
+        let updated = 0;
+        for (const launch of incoming) {
+          if (launches.has(launch.id)) updated += 1;
+          else inserted += 1;
+          launches.set(launch.id, launch);
+        }
+        return { inserted, updated };
+      },
+
+      // Filtered by time rather than status: a launch that slipped into the past
+      // without its status being updated is stale, and showing it is worse than
+      // showing nothing.
+      upcoming: async (from, limit) =>
+        [...launches.values()]
+          .filter((launch) => launch.net.getTime() >= from.getTime())
+          .sort((a, b) => a.net.getTime() - b.net.getTime())
+          .slice(0, limit),
+    };
+  }
+
+  #createStationRepository(): GroundStationRepository {
+    const stations = this.#stations;
+
+    return {
+      upsertMany: async (incoming) => {
+        let inserted = 0;
+        let updated = 0;
+        for (const station of incoming) {
+          if (stations.has(station.id)) updated += 1;
+          else inserted += 1;
+          stations.set(station.id, station);
+        }
+        return { inserted, updated };
+      },
+
+      list: async (options = {}) => {
+        const all = [...stations.values()]
+          .filter((station) => options.status === undefined || station.status === options.status)
+          // Most recently heard from first: a station seen an hour ago is more useful
+          // than one last seen in 2019, and both are legitimately in the table.
+          .sort((a, b) => (b.lastSeen?.getTime() ?? 0) - (a.lastSeen?.getTime() ?? 0));
+        return options.limit === undefined ? all : all.slice(0, options.limit);
+      },
+
+      countByStatus: async () => {
+        const counts: Record<string, number> = {};
+        for (const station of stations.values()) {
+          counts[station.status] = (counts[station.status] ?? 0) + 1;
+        }
+        return counts;
+      },
+    };
+  }
+
+  #createSolarEventRepository(): SolarEventRepository {
+    const events = this.#solarEvents;
+
+    return {
+      upsertMany: async (incoming) => {
+        let inserted = 0;
+        let updated = 0;
+        for (const event of incoming) {
+          if (events.has(event.id)) updated += 1;
+          else inserted += 1;
+          events.set(event.id, event);
+        }
+        return { inserted, updated };
+      },
+
+      recent: async (options = {}) => {
+        const all = [...events.values()]
+          .filter(
+            (event) =>
+              (options.since === undefined ||
+                event.issuedAt.getTime() >= options.since.getTime()) &&
+              (options.types === undefined || options.types.includes(event.type)),
+          )
+          .sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime());
+        return options.limit === undefined ? all : all.slice(0, options.limit);
+      },
+    };
+  }
+
+  #createWatchlistSyncRepository(): WatchlistSyncRepository {
+    const store = this.#watchlistSync;
+    const now = this.#now;
+
+    return {
+      put: async (codeHash, catalogIds) => {
+        const updatedAt = now();
+        // Copied, not referenced: the caller's array must not be able to change what
+        // is stored after the fact.
+        store.set(codeHash, { codeHash, catalogIds: [...catalogIds], updatedAt });
+        return { updatedAt };
+      },
+
+      get: async (codeHash) => store.get(codeHash),
+
+      remove: async (codeHash) => store.delete(codeHash),
+
+      purgeOlderThan: async (before) => {
+        let purged = 0;
+        for (const [hash, record] of store) {
+          if (record.updatedAt.getTime() < before.getTime()) {
+            store.delete(hash);
+            purged += 1;
+          }
+        }
+        return purged;
       },
     };
   }

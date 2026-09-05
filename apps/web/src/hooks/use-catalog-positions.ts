@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { catalogElementsUrl } from "../lib/api-client";
+import type {
+  PlainObserver,
+  VisiblePass,
+  VisibleTonightResult,
+} from "../workers/pass-messages";
 
 /**
  * Fields per object in the worker's position buffer:
@@ -45,15 +50,70 @@ export type CatalogTickState =
       readonly count: number;
       readonly failed: number;
       readonly tickTime: number;
+      /**
+       * When the element set behind these positions was retrieved, as an ISO string.
+       *
+       * The catalog response's own `time`. Distinct from `tickTime`, which is the
+       * instant the positions were propagated TO: offline, the first can be hours
+       * behind the second, and the gap between them is the whole point.
+       */
+      readonly retrievedAt: string | undefined;
+      /** True when the service worker served these elements from its cache. */
+      readonly fromCache: boolean;
     };
 
-export function useCatalogPositions(time: number): CatalogTickState {
+/**
+ * Result of a "Visible Tonight" search.
+ *
+ * `no-darkness` is a first-class outcome, not an error: above the polar circles there
+ * are weeks with no night, and the UI must say so rather than show an empty list that
+ * reads as "nothing is visible".
+ */
+export type VisibleTonightState =
+  | { readonly status: "idle" }
+  | { readonly status: "searching" }
+  | { readonly status: "no-darkness" }
+  | {
+      readonly status: "ready";
+      readonly darkStart: number;
+      readonly darkEnd: number;
+      readonly searched: number;
+      readonly passes: readonly VisiblePass[];
+    };
+
+export interface CatalogWorker {
+  readonly catalog: CatalogTickState;
+  readonly visibleTonight: VisibleTonightState;
+  /**
+   * Search the given objects for passes in the next darkness window.
+   *
+   * The caller chooses the subset, because the worker has no opinion about which
+   * objects are worth looking for and the catalog carries no brightness data to form
+   * one. In practice this is CelesTrak's `visual` membership.
+   */
+  readonly requestVisibleTonight: (
+    observer: PlainObserver,
+    catalogIds: readonly string[],
+    from: number,
+  ) => void;
+}
+
+export function useCatalogPositions(time: number): CatalogWorker {
   const [state, setState] = useState<CatalogTickState>({ status: "loading" });
   const workerRef = useRef<Worker | null>(null);
   const catalogIdsRef = useRef<readonly string[]>([]);
+  /** Mirrors `ready` so the stable request callback can read it without a dependency. */
+  const readyRef = useRef(false);
+  // A ref, like catalogIds: the "ready" and "positions" messages arrive separately, and
+  // the positions handler must not re-subscribe every time this changes.
+  const retrievedAtRef = useRef<string | undefined>(undefined);
+  const fromCacheRef = useRef(false);
   // State, not a ref: becoming ready has to re-run the tick effect below, otherwise
   // nothing propagates until `time` next changes — which in SIMULATION is never.
   const [ready, setReady] = useState(false);
+  const [visibleTonight, setVisibleTonight] = useState<VisibleTonightState>({
+    status: "idle",
+  });
 
   // Worker lifecycle: created once, fed the catalog once.
   useEffect(() => {
@@ -68,14 +128,24 @@ export function useCatalogPositions(time: number): CatalogTickState {
       if (disposed) return;
       const message = event.data as
         | { type: "catalogIds"; ids: readonly string[] }
-        | { type: "ready"; count: number; failed: number }
+        | {
+            type: "ready";
+            count: number;
+            failed: number;
+            retrievedAt: string;
+            fromCache: boolean;
+          }
         | { type: "error"; message: string }
-        | { type: "positions"; buffer: ArrayBuffer; time: number };
+        | { type: "positions"; buffer: ArrayBuffer; time: number }
+        | VisibleTonightResult;
 
       if (message.type === "catalogIds") {
         catalogIdsRef.current = message.ids;
       } else if (message.type === "ready") {
+        readyRef.current = true;
         setReady(true);
+        retrievedAtRef.current = message.retrievedAt;
+        fromCacheRef.current = message.fromCache;
         if (message.failed > 0) {
           // Visible in the console rather than swallowed: dropping thousands of
           // objects from the catalog must never be silent.
@@ -83,6 +153,18 @@ export function useCatalogPositions(time: number): CatalogTickState {
             `${message.failed} of ${message.count + message.failed} elements failed to parse`,
           );
         }
+      } else if (message.type === "visibleTonight") {
+        setVisibleTonight(
+          message.status === "no-darkness"
+            ? { status: "no-darkness" }
+            : {
+                status: "ready",
+                darkStart: message.darkStart,
+                darkEnd: message.darkEnd,
+                searched: message.searched,
+                passes: message.passes,
+              },
+        );
       } else if (message.type === "error") {
         setState({ status: "failed", message: message.message });
       } else if (message.type === "positions") {
@@ -93,6 +175,8 @@ export function useCatalogPositions(time: number): CatalogTickState {
           count: catalogIdsRef.current.length,
           failed: 0,
           tickTime: message.time,
+          retrievedAt: retrievedAtRef.current,
+          fromCache: fromCacheRef.current,
         });
       }
     });
@@ -113,5 +197,17 @@ export function useCatalogPositions(time: number): CatalogTickState {
     workerRef.current?.postMessage({ type: "tick", time });
   }, [ready, time]);
 
-  return state;
+  const requestVisibleTonight = useCallback<CatalogWorker["requestVisibleTonight"]>(
+    (observer, catalogIds, from) => {
+      const worker = workerRef.current;
+      // Silently ignored before the catalog is parsed: the worker would have no
+      // satrecs to search and would answer "nothing tonight", which is a claim.
+      if (worker === null || !readyRef.current) return;
+      setVisibleTonight({ status: "searching" });
+      worker.postMessage({ type: "visibleTonight", observer, catalogIds, from });
+    },
+    [],
+  );
+
+  return { catalog: state, visibleTonight, requestVisibleTonight };
 }

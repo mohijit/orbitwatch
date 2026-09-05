@@ -253,10 +253,234 @@ export type ElementHistoryResponse = z.infer<typeof elementHistoryResponseSchema
 export const catalogElementsResponseSchema = z.object({
   time: isoTimestampSchema,
   count: z.number().int().nonnegative(),
-  elements: z.array(orbitalElementsSchema),
+  /**
+   * The provider's OMM records, and nothing else.
+   *
+   * Deliberately NOT `orbitalElementsSchema`, which is the right shape for one
+   * satellite and the wrong one sixteen thousand times over. That envelope repeats
+   * `provider` and `format` identically per record, and restates `epoch`,
+   * `meanMotion`, `eccentricity`, `inclination` and `bstar` alongside the same values
+   * inside `omm` — measured at 240 of 664 bytes per record, more than a third of an
+   * 11 MB response, for fields this endpoint's only consumer never reads.
+   *
+   * The client needs the elements to propagate and the name to label; both are in the
+   * OMM. Per-record provenance still exists in full at /satellites/:id/elements, which
+   * is where a user asks about one object rather than renders all of them.
+   */
+  elements: z.array(z.record(z.string(), z.unknown())),
 });
 
 export type CatalogElementsResponse = z.infer<typeof catalogElementsResponseSchema>;
+
+/**
+ * Membership of a provider-published group.
+ *
+ * Catalog IDs only, deliberately. The client already holds every element set for the
+ * globe, so sending the elements again would be a second copy of data it has; what it
+ * cannot derive is WHICH objects are in the group. That is the whole payload.
+ *
+ * `observedAt` is when the provider last listed this membership, not when this response
+ * was built. A group whose membership is a week stale is a different claim from one
+ * refreshed an hour ago, and the client is entitled to say so.
+ */
+export const catalogGroupResponseSchema = z.object({
+  provider: z.string(),
+  group: z.string(),
+  count: z.number().int().nonnegative(),
+  catalogIds: z.array(z.string()),
+  observedAt: isoTimestampSchema.optional(),
+});
+
+export type CatalogGroupResponse = z.infer<typeof catalogGroupResponseSchema>;
+
+// ── radio ────────────────────────────────────────────────────────────────────────
+
+/**
+ * A transmitter as served to a client.
+ *
+ * Frequencies stay in HERTZ across the wire. Formatting to MHz is a presentation
+ * decision and belongs where the units can be labelled; converting here would put a
+ * factor of a million into the transport, which is exactly where such a mistake is
+ * hardest to see.
+ */
+export const radioTransmitterSchema = z.object({
+  uuid: z.string(),
+  description: z.string(),
+  type: z.string().optional(),
+  status: z.string(),
+  alive: z.boolean(),
+  uplinkLowHz: z.number().optional(),
+  uplinkHighHz: z.number().optional(),
+  downlinkLowHz: z.number().optional(),
+  downlinkHighHz: z.number().optional(),
+  mode: z.string().optional(),
+  uplinkMode: z.string().optional(),
+  baud: z.number().optional(),
+  inverted: z.boolean().optional(),
+  service: z.string().optional(),
+  citation: z.string().optional(),
+  /** When the PROVIDER last changed it — not when OrbitWatch fetched it. */
+  updatedAt: isoTimestampSchema.optional(),
+  retrievedAt: isoTimestampSchema,
+});
+
+export const radioTransmittersResponseSchema = z.object({
+  catalogId: z.string(),
+  provider: z.string(),
+  count: z.number().int().nonnegative(),
+  transmitters: z.array(radioTransmitterSchema),
+  /**
+   * Attribution is part of the response, not a footnote someone might forget.
+   *
+   * SatNOGS data is CC BY-SA 4.0. A client that renders these frequencies is obliged
+   * to credit the source, and shipping the text with the data is what makes that hard
+   * to omit by accident.
+   */
+  attribution: z.string(),
+});
+
+export type RadioTransmitterDto = z.infer<typeof radioTransmitterSchema>;
+export type RadioTransmittersResponse = z.infer<typeof radioTransmittersResponseSchema>;
+
+// ── space weather ────────────────────────────────────────────────────────────────
+
+/**
+ * Current space weather, and why a tracker reports it.
+ *
+ * Elevated geomagnetic activity expands the thermosphere and raises drag in low orbit,
+ * so a propagated position drifts faster during a storm — the accuracy this product
+ * quotes for an ageing element set is optimistic exactly when conditions are worst.
+ * Every field is optional because NOAA's products fail independently, and a missing
+ * value must read as "not known" rather than as a calm reading.
+ */
+export const spaceWeatherResponseSchema = z.object({
+  /** Kp, 0-9, from the 3-hourly planetary index. */
+  kp: z.number().optional(),
+  kpObservedAt: isoTimestampSchema.optional(),
+  solarWindSpeedKmS: z.number().optional(),
+  bzNt: z.number().optional(),
+  solarWindObservedAt: isoTimestampSchema.optional(),
+  /** NOAA R/S/G scales, 0-5. */
+  radioBlackoutScale: z.number().int().min(0).max(5).optional(),
+  solarRadiationScale: z.number().int().min(0).max(5).optional(),
+  geomagneticScale: z.number().int().min(0).max(5).optional(),
+  scalesObservedAt: isoTimestampSchema.optional(),
+  /** Recent Kp, oldest first, for a sparkline. */
+  kpHistory: z.array(z.object({ observedAt: isoTimestampSchema, kp: z.number() })),
+  /** True when nothing has ever been ingested — distinct from calm conditions. */
+  unavailable: z.boolean(),
+  attribution: z.string(),
+});
+
+export type SpaceWeatherResponse = z.infer<typeof spaceWeatherResponseSchema>;
+
+// ── launches ─────────────────────────────────────────────────────────────────────
+
+/**
+ * A scheduled launch.
+ *
+ * `netPrecision` is served beside `net` and is the field that matters. Launch Library
+ * publishes a full ISO timestamp even for a launch known only to the month, so the
+ * timestamp alone is not a usable fact — a client rendering it without the precision
+ * shows a to-the-minute T-0 for something that may slip four weeks. Absent means the
+ * provider did not state it, which is "unknown", not "exact".
+ */
+export const launchSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  net: isoTimestampSchema,
+  netPrecision: z.string().optional(),
+  windowStart: isoTimestampSchema.optional(),
+  windowEnd: isoTimestampSchema.optional(),
+  status: z.string().optional(),
+  serviceProvider: z.string().optional(),
+  rocket: z.string().optional(),
+  mission: z.string().optional(),
+  orbit: z.string().optional(),
+  pad: z.string().optional(),
+  padLocation: z.string().optional(),
+  padLatitude: z.number().min(-90).max(90).optional(),
+  padLongitude: z.number().min(-180).max(180).optional(),
+  webcastLive: z.boolean(),
+});
+
+export const launchesResponseSchema = z.object({
+  count: z.number().int().nonnegative(),
+  launches: z.array(launchSchema),
+  attribution: z.string(),
+});
+
+export type Launch = z.infer<typeof launchSchema>;
+export type LaunchesResponse = z.infer<typeof launchesResponseSchema>;
+
+// ── ground stations and solar events ─────────────────────────────────────────────
+
+/**
+ * A ground station that can receive passes.
+ *
+ * `minHorizonDegrees` is the station's OWN lowest observable elevation. A site in a
+ * valley may not see below 40 degrees, so "above 10 degrees" is not the same question
+ * for every receiver, and a client comparing a pass against a station must use this
+ * rather than a global default.
+ */
+export const groundStationSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  altitudeM: z.number(),
+  minHorizonDegrees: z.number(),
+  /** 'Online' | 'Offline' | 'Testing', as the provider publishes it. */
+  status: z.string(),
+  bands: z.array(z.string()),
+  observations: z.number().int().nonnegative(),
+  lastSeen: isoTimestampSchema.optional(),
+});
+
+export const groundStationsResponseSchema = z.object({
+  count: z.number().int().nonnegative(),
+  /** Every station stored, not just the returned page. */
+  total: z.number().int().nonnegative(),
+  /**
+   * How many stations are in each status.
+   *
+   * Present so a client cannot present the total as receiving capacity: roughly nine
+   * in ten stations are offline at any moment, and a list without this breakdown
+   * overstates coverage by an order of magnitude.
+   */
+  byStatus: z.record(z.string(), z.number().int().nonnegative()),
+  stations: z.array(groundStationSchema),
+  attribution: z.string(),
+});
+
+export type GroundStation = z.infer<typeof groundStationSchema>;
+export type GroundStationsResponse = z.infer<typeof groundStationsResponseSchema>;
+
+/**
+ * A discrete solar or geomagnetic event.
+ *
+ * Distinct from the space weather response, which reports the CURRENT level on the
+ * R/S/G scales. This is what happened, and when.
+ */
+export const solarEventSchema = z.object({
+  id: z.string(),
+  /** CME | GST | FLR | SEP | RBE | IPS | MPC | Report | anything NASA adds. */
+  type: z.string(),
+  /** False when the provider used a type this product cannot yet explain. */
+  knownType: z.boolean(),
+  issuedAt: isoTimestampSchema,
+  url: z.string(),
+  summary: z.string(),
+});
+
+export const solarEventsResponseSchema = z.object({
+  count: z.number().int().nonnegative(),
+  events: z.array(solarEventSchema),
+  attribution: z.string(),
+});
+
+export type SolarEvent = z.infer<typeof solarEventSchema>;
+export type SolarEventsResponse = z.infer<typeof solarEventsResponseSchema>;
 
 // ── query parameters ─────────────────────────────────────────────────────────────
 
@@ -274,3 +498,105 @@ export const satelliteQuerySchema = z.object({
 });
 
 export type SatelliteQuery = z.infer<typeof satelliteQuerySchema>;
+
+// ── observer ─────────────────────────────────────────────────────────────────────
+
+/**
+ * A place someone is observing from.
+ *
+ * Lives in contracts rather than in the web app because every platform needs it and
+ * they must agree byte for byte: the M6 gate asserts that web and native compute the
+ * same look angles and pass times from the same observer, which is only meaningful if
+ * "the same observer" has one definition. It is also what the web app persists to
+ * local storage, so this schema doubles as the validator for data that has been
+ * sitting in a browser across app versions.
+ *
+ * Altitude is in KILOMETRES, matching orbit-core, and is above the WGS-84 ellipsoid
+ * rather than above sea level. The distinction is worth tens of metres, which is far
+ * below anything this affects, but naming it stops the two being silently mixed.
+ */
+export const observerLocationSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  /**
+   * Bounded well beyond any inhabited elevation. The point is not to police altitude
+   * but to reject nonsense — a metres value pasted into a kilometres field turns
+   * Everest into 8,849 km and puts the observer above most of the catalog.
+   */
+  altitude: z.number().min(-0.5).max(20),
+  label: z.string().min(1).max(120).optional(),
+});
+
+export type ObserverLocationInput = z.infer<typeof observerLocationSchema>;
+
+/** How the observer's position was obtained. Shown in the UI; never guessed. */
+export const observerSourceSchema = z.enum(["DEVICE", "GLOBE", "MANUAL"]);
+
+export type ObserverSource = z.infer<typeof observerSourceSchema>;
+
+/**
+ * A stored observer, with provenance and an accuracy figure when the source has one.
+ *
+ * `accuracyMetres` comes from the Geolocation API and is only ever present for a
+ * DEVICE fix. A hand-entered coordinate has no meaningful accuracy, and inventing one
+ * would misrepresent it.
+ */
+export const storedObserverSchema = observerLocationSchema.extend({
+  source: observerSourceSchema,
+  accuracyMetres: z.number().positive().optional(),
+  savedAt: isoTimestampSchema,
+});
+
+export type StoredObserver = z.infer<typeof storedObserverSchema>;
+
+/**
+ * Watchlist sync.
+ *
+ * The one thing this product stores on behalf of a person, and it is deliberately the
+ * least of it: a list of catalog numbers, reachable only by a code the server does not
+ * keep. No account, no email, and above all no observing location — that is a home
+ * address to within a few metres, it never leaves the device, and the app says so.
+ */
+
+/**
+ * A catalog number, bounded.
+ *
+ * The same shape the satellite routes accept. Bounded because this is the one endpoint
+ * where the CLIENT decides what gets stored, and an unbounded string array is how a
+ * store meant for satellite numbers ends up holding something else.
+ */
+export const syncCatalogIdSchema = z
+  .string()
+  .min(1)
+  .max(11)
+  .regex(/^[A-Za-z0-9-]+$/, "a catalog number, not free text");
+
+/**
+ * At most this many followed objects.
+ *
+ * Well above any plausible watchlist — nobody is meaningfully following five hundred
+ * satellites — and low enough that the endpoint cannot be used as free storage.
+ */
+export const MAX_SYNCED_WATCHLIST = 500;
+
+export const watchlistSyncBodySchema = z.object({
+  catalogIds: z.array(syncCatalogIdSchema).max(MAX_SYNCED_WATCHLIST),
+});
+
+export type WatchlistSyncBody = z.infer<typeof watchlistSyncBodySchema>;
+
+/** The response to creating a pairing. The only time the code is ever transmitted back. */
+export const watchlistSyncCreatedSchema = z.object({
+  /** Formatted for a human to read aloud or type: `ABCDE-FGHJK`. */
+  code: z.string(),
+  updatedAt: isoTimestampSchema,
+});
+
+export type WatchlistSyncCreated = z.infer<typeof watchlistSyncCreatedSchema>;
+
+export const watchlistSyncResponseSchema = z.object({
+  catalogIds: z.array(syncCatalogIdSchema),
+  updatedAt: isoTimestampSchema,
+});
+
+export type WatchlistSyncResponse = z.infer<typeof watchlistSyncResponseSchema>;

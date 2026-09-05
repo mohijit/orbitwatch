@@ -1,0 +1,1682 @@
+{
+  "generatedFrom": "fixtures/celestrak-gp-e2e-subset.json",
+  "note": "Expected values for the cross-platform agreement suite. Generated once on Node (V8) and committed; every platform is measured against these numbers rather than against another platform's run. Regenerate only when the source elements change, and review the diff.",
+  "anchor": "2026-09-01T04:13:20.184Z",
+  "cases": [
+    {
+      "id": "iss-leo-sydney",
+      "omm": {
+        "BSTAR": 0.00008462,
+        "EPOCH": "2026-09-01T04:13:20.184384",
+        "OBJECT_ID": "1998-067A",
+        "INCLINATION": 51.6312,
+        "MEAN_MOTION": 15.48956502,
+        "OBJECT_NAME": "ISS (ZARYA)",
+        "ECCENTRICITY": 0.0005055,
+        "MEAN_ANOMALY": 264.873,
+        "NORAD_CAT_ID": 25544,
+        "REV_AT_EPOCH": 58353,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 283.9914,
+        "MEAN_MOTION_DOT": 0.00004207,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 95.2836,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Sydney",
+        "latitude": -33.8688,
+        "longitude": 151.2093,
+        "altitudeKm": 0.058
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "iss-leo-quito",
+      "omm": {
+        "BSTAR": 0.00008462,
+        "EPOCH": "2026-09-01T04:13:20.184384",
+        "OBJECT_ID": "1998-067A",
+        "INCLINATION": 51.6312,
+        "MEAN_MOTION": 15.48956502,
+        "OBJECT_NAME": "ISS (ZARYA)",
+        "ECCENTRICITY": 0.0005055,
+        "MEAN_ANOMALY": 264.873,
+        "NORAD_CAT_ID": 25544,
+        "REV_AT_EPOCH": 58353,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 283.9914,
+        "MEAN_MOTION_DOT": 0.00004207,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 95.2836,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Quito",
+        "latitude": -0.1807,
+        "longitude": -78.4678,
+        "altitudeKm": 2.85
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "iss-leo-tromso",
+      "omm": {
+        "BSTAR": 0.00008462,
+        "EPOCH": "2026-09-01T04:13:20.184384",
+        "OBJECT_ID": "1998-067A",
+        "INCLINATION": 51.6312,
+        "MEAN_MOTION": 15.48956502,
+        "OBJECT_NAME": "ISS (ZARYA)",
+        "ECCENTRICITY": 0.0005055,
+        "MEAN_ANOMALY": 264.873,
+        "NORAD_CAT_ID": 25544,
+        "REV_AT_EPOCH": 58353,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 283.9914,
+        "MEAN_MOTION_DOT": 0.00004207,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 95.2836,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Tromso",
+        "latitude": 69.6492,
+        "longitude": 18.9553,
+        "altitudeKm": 0.01
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "iss-leo-antimeridian",
+      "omm": {
+        "BSTAR": 0.00008462,
+        "EPOCH": "2026-09-01T04:13:20.184384",
+        "OBJECT_ID": "1998-067A",
+        "INCLINATION": 51.6312,
+        "MEAN_MOTION": 15.48956502,
+        "OBJECT_NAME": "ISS (ZARYA)",
+        "ECCENTRICITY": 0.0005055,
+        "MEAN_ANOMALY": 264.873,
+        "NORAD_CAT_ID": 25544,
+        "REV_AT_EPOCH": 58353,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 283.9914,
+        "MEAN_MOTION_DOT": 0.00004207,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 95.2836,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Antimeridian",
+        "latitude": 0,
+        "longitude": 179.9,
+        "altitudeKm": 0
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "tdrs3-geo-sydney",
+      "omm": {
+        "BSTAR": 0,
+        "EPOCH": "2026-09-01T03:57:10.414368",
+        "OBJECT_ID": "1988-091B",
+        "INCLINATION": 12.546,
+        "MEAN_MOTION": 1.00279261,
+        "OBJECT_NAME": "TDRS 3",
+        "ECCENTRICITY": 0.0037968,
+        "MEAN_ANOMALY": 17.5357,
+        "NORAD_CAT_ID": 19548,
+        "REV_AT_EPOCH": 12615,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 340.487,
+        "MEAN_MOTION_DOT": -0.00000293,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 352.5922,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Sydney",
+        "latitude": -33.8688,
+        "longitude": 151.2093,
+        "altitudeKm": 0.058
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "tdrs3-geo-quito",
+      "omm": {
+        "BSTAR": 0,
+        "EPOCH": "2026-09-01T03:57:10.414368",
+        "OBJECT_ID": "1988-091B",
+        "INCLINATION": 12.546,
+        "MEAN_MOTION": 1.00279261,
+        "OBJECT_NAME": "TDRS 3",
+        "ECCENTRICITY": 0.0037968,
+        "MEAN_ANOMALY": 17.5357,
+        "NORAD_CAT_ID": 19548,
+        "REV_AT_EPOCH": 12615,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 340.487,
+        "MEAN_MOTION_DOT": -0.00000293,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 352.5922,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Quito",
+        "latitude": -0.1807,
+        "longitude": -78.4678,
+        "altitudeKm": 2.85
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "tdrs3-geo-tromso",
+      "omm": {
+        "BSTAR": 0,
+        "EPOCH": "2026-09-01T03:57:10.414368",
+        "OBJECT_ID": "1988-091B",
+        "INCLINATION": 12.546,
+        "MEAN_MOTION": 1.00279261,
+        "OBJECT_NAME": "TDRS 3",
+        "ECCENTRICITY": 0.0037968,
+        "MEAN_ANOMALY": 17.5357,
+        "NORAD_CAT_ID": 19548,
+        "REV_AT_EPOCH": 12615,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 340.487,
+        "MEAN_MOTION_DOT": -0.00000293,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 352.5922,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Tromso",
+        "latitude": 69.6492,
+        "longitude": 18.9553,
+        "altitudeKm": 0.01
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "tdrs3-geo-antimeridian",
+      "omm": {
+        "BSTAR": 0,
+        "EPOCH": "2026-09-01T03:57:10.414368",
+        "OBJECT_ID": "1988-091B",
+        "INCLINATION": 12.546,
+        "MEAN_MOTION": 1.00279261,
+        "OBJECT_NAME": "TDRS 3",
+        "ECCENTRICITY": 0.0037968,
+        "MEAN_ANOMALY": 17.5357,
+        "NORAD_CAT_ID": 19548,
+        "REV_AT_EPOCH": 12615,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 340.487,
+        "MEAN_MOTION_DOT": -0.00000293,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 352.5922,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Antimeridian",
+        "latitude": 0,
+        "longitude": 179.9,
+        "altitudeKm": 0
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "les5-meo-sydney",
+      "omm": {
+        "BSTAR": 0,
+        "EPOCH": "2026-09-01T04:08:39.311808",
+        "OBJECT_ID": "1967-066E",
+        "INCLINATION": 2.7948,
+        "MEAN_MOTION": 1.09425223,
+        "OBJECT_NAME": "LES-5",
+        "ECCENTRICITY": 0.0051582,
+        "MEAN_ANOMALY": 83.9466,
+        "NORAD_CAT_ID": 2866,
+        "REV_AT_EPOCH": 13186,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 94.1467,
+        "MEAN_MOTION_DOT": -5e-7,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 214.6301,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Sydney",
+        "latitude": -33.8688,
+        "longitude": 151.2093,
+        "altitudeKm": 0.058
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "les5-meo-quito",
+      "omm": {
+        "BSTAR": 0,
+        "EPOCH": "2026-09-01T04:08:39.311808",
+        "OBJECT_ID": "1967-066E",
+        "INCLINATION": 2.7948,
+        "MEAN_MOTION": 1.09425223,
+        "OBJECT_NAME": "LES-5",
+        "ECCENTRICITY": 0.0051582,
+        "MEAN_ANOMALY": 83.9466,
+        "NORAD_CAT_ID": 2866,
+        "REV_AT_EPOCH": 13186,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 94.1467,
+        "MEAN_MOTION_DOT": -5e-7,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 214.6301,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Quito",
+        "latitude": -0.1807,
+        "longitude": -78.4678,
+        "altitudeKm": 2.85
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "les5-meo-tromso",
+      "omm": {
+        "BSTAR": 0,
+        "EPOCH": "2026-09-01T04:08:39.311808",
+        "OBJECT_ID": "1967-066E",
+        "INCLINATION": 2.7948,
+        "MEAN_MOTION": 1.09425223,
+        "OBJECT_NAME": "LES-5",
+        "ECCENTRICITY": 0.0051582,
+        "MEAN_ANOMALY": 83.9466,
+        "NORAD_CAT_ID": 2866,
+        "REV_AT_EPOCH": 13186,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 94.1467,
+        "MEAN_MOTION_DOT": -5e-7,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 214.6301,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Tromso",
+        "latitude": 69.6492,
+        "longitude": 18.9553,
+        "altitudeKm": 0.01
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "les5-meo-antimeridian",
+      "omm": {
+        "BSTAR": 0,
+        "EPOCH": "2026-09-01T04:08:39.311808",
+        "OBJECT_ID": "1967-066E",
+        "INCLINATION": 2.7948,
+        "MEAN_MOTION": 1.09425223,
+        "OBJECT_NAME": "LES-5",
+        "ECCENTRICITY": 0.0051582,
+        "MEAN_ANOMALY": 83.9466,
+        "NORAD_CAT_ID": 2866,
+        "REV_AT_EPOCH": 13186,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 94.1467,
+        "MEAN_MOTION_DOT": -5e-7,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 214.6301,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Antimeridian",
+        "latitude": 0,
+        "longitude": 179.9,
+        "altitudeKm": 0
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "rosto-heo-sydney",
+      "omm": {
+        "BSTAR": 0.00043602,
+        "EPOCH": "2026-09-01T05:04:07.279104",
+        "OBJECT_ID": "1994-085A",
+        "INCLINATION": 64.8162,
+        "MEAN_MOTION": 11.27584024,
+        "OBJECT_NAME": "RADIO ROSTO (RS15)",
+        "ECCENTRICITY": 0.0158717,
+        "MEAN_ANOMALY": 9.6527,
+        "NORAD_CAT_ID": 23439,
+        "REV_AT_EPOCH": 30447,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 180.2615,
+        "MEAN_MOTION_DOT": -2.7e-7,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 350.1291,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Sydney",
+        "latitude": -33.8688,
+        "longitude": 151.2093,
+        "altitudeKm": 0.058
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "rosto-heo-quito",
+      "omm": {
+        "BSTAR": 0.00043602,
+        "EPOCH": "2026-09-01T05:04:07.279104",
+        "OBJECT_ID": "1994-085A",
+        "INCLINATION": 64.8162,
+        "MEAN_MOTION": 11.27584024,
+        "OBJECT_NAME": "RADIO ROSTO (RS15)",
+        "ECCENTRICITY": 0.0158717,
+        "MEAN_ANOMALY": 9.6527,
+        "NORAD_CAT_ID": 23439,
+        "REV_AT_EPOCH": 30447,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 180.2615,
+        "MEAN_MOTION_DOT": -2.7e-7,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 350.1291,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Quito",
+        "latitude": -0.1807,
+        "longitude": -78.4678,
+        "altitudeKm": 2.85
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "rosto-heo-tromso",
+      "omm": {
+        "BSTAR": 0.00043602,
+        "EPOCH": "2026-09-01T05:04:07.279104",
+        "OBJECT_ID": "1994-085A",
+        "INCLINATION": 64.8162,
+        "MEAN_MOTION": 11.27584024,
+        "OBJECT_NAME": "RADIO ROSTO (RS15)",
+        "ECCENTRICITY": 0.0158717,
+        "MEAN_ANOMALY": 9.6527,
+        "NORAD_CAT_ID": 23439,
+        "REV_AT_EPOCH": 30447,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 180.2615,
+        "MEAN_MOTION_DOT": -2.7e-7,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 350.1291,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Tromso",
+        "latitude": 69.6492,
+        "longitude": 18.9553,
+        "altitudeKm": 0.01
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    },
+    {
+      "id": "rosto-heo-antimeridian",
+      "omm": {
+        "BSTAR": 0.00043602,
+        "EPOCH": "2026-09-01T05:04:07.279104",
+        "OBJECT_ID": "1994-085A",
+        "INCLINATION": 64.8162,
+        "MEAN_MOTION": 11.27584024,
+        "OBJECT_NAME": "RADIO ROSTO (RS15)",
+        "ECCENTRICITY": 0.0158717,
+        "MEAN_ANOMALY": 9.6527,
+        "NORAD_CAT_ID": 23439,
+        "REV_AT_EPOCH": 30447,
+        "ELEMENT_SET_NO": 999,
+        "EPHEMERIS_TYPE": 0,
+        "RA_OF_ASC_NODE": 180.2615,
+        "MEAN_MOTION_DOT": -2.7e-7,
+        "MEAN_MOTION_DDOT": 0,
+        "ARG_OF_PERICENTER": 350.1291,
+        "CLASSIFICATION_TYPE": "U"
+      },
+      "observer": {
+        "label": "Antimeridian",
+        "latitude": 0,
+        "longitude": 179.9,
+        "altitudeKm": 0
+      },
+      "instants": [
+        "2026-09-01T04:13:20.184Z",
+        "2026-09-01T04:28:20.184Z",
+        "2026-09-01T07:13:20.184Z",
+        "2026-09-01T16:13:20.184Z",
+        "2026-09-02T16:13:20.184Z"
+      ],
+      "passWindow": {
+        "start": "2026-09-01T04:13:20.184Z",
+        "end": "2026-09-02T04:13:20.184Z"
+      }
+    }
+  ],
+  "expected": [
+    {
+      "id": "iss-leo-sydney",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": 0.00006177939347391501,
+          "longitude": -119.68922437004224,
+          "altitudeKm": 420.8263450204622,
+          "azimuth": 89.6658630199079,
+          "elevation": -42.744578314561686,
+          "rangeKm": 9257.03388741532
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": 41.949417624317825,
+          "longitude": -78.45907580034942,
+          "altitudeKm": 420.8723161051412,
+          "azimuth": 63.684482486592984,
+          "elevation": -69.6540933134362,
+          "rangeKm": 12386.043936301698
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": -17.556285048372523,
+          "longitude": -179.8545237299313,
+          "altitudeKm": 426.01770823843526,
+          "azimuth": 65.19385777909153,
+          "elevation": -8.538107714605417,
+          "rangeKm": 3497.537716182736
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": -51.78614888149003,
+          "longitude": -32.444201006303416,
+          "altitudeKm": 440.95187413498024,
+          "azimuth": 177.73185275221908,
+          "elevation": -45.40012581011977,
+          "rangeKm": 9691.757271999037
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": 51.786752605562064,
+          "longitude": 141.53208104474453,
+          "altitudeKm": 422.41448916928584,
+          "azimuth": 353.9751288587665,
+          "elevation": -41.089150645876515,
+          "rangeKm": 8956.445179438067
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788246138309,
+          "maxMs": 1788246315176,
+          "losMs": 1788246489871,
+          "maxElevation": 25.33585368356444
+        },
+        {
+          "aosMs": 1788251944246,
+          "maxMs": 1788252121584,
+          "losMs": 1788252296746,
+          "maxElevation": 26.76468788041713
+        },
+        {
+          "aosMs": 1788306142059,
+          "maxMs": 1788306343712,
+          "losMs": 1788306548465,
+          "maxElevation": 64.40914800403897
+        },
+        {
+          "aosMs": 1788312047371,
+          "maxMs": 1788312171266,
+          "losMs": 1788312295340,
+          "maxElevation": 14.904570425554184
+        }
+      ]
+    },
+    {
+      "id": "iss-leo-quito",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": 0.00006177939347391501,
+          "longitude": -119.68922437004224,
+          "altitudeKm": 420.8263450204622,
+          "azimuth": 270.2046261609128,
+          "elevation": -15.790947829097007,
+          "rangeKm": 4656.061743610217
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": 41.949417624317825,
+          "longitude": -78.45907580034942,
+          "altitudeKm": 420.8723161051412,
+          "azimuth": 0.009733739096978427,
+          "elevation": -16.35031469913799,
+          "rangeKm": 4729.8654087529685
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": -17.556285048372523,
+          "longitude": -179.8545237299313,
+          "altitudeKm": 426.01770823843526,
+          "azimuth": 252.18462224066369,
+          "elevation": -48.88606164461103,
+          "rangeKm": 10161.469348464396
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": -51.78614888149003,
+          "longitude": -32.444201006303416,
+          "altitudeKm": 440.95187413498024,
+          "azimuth": 150.2683970280431,
+          "elevation": -29.214263611524792,
+          "rangeKm": 7026.529435473654
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": 51.786752605562064,
+          "longitude": 141.53208104474453,
+          "altitudeKm": 422.41448916928584,
+          "azimuth": 332.9668986282428,
+          "elevation": -58.233312686875195,
+          "rangeKm": 11322.73816642843
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788266412215,
+          "maxMs": 1788266572514,
+          "losMs": 1788266733777,
+          "maxElevation": 22.354210554190185
+        },
+        {
+          "aosMs": 1788272305809,
+          "maxMs": 1788272369705,
+          "losMs": 1788272434246,
+          "maxElevation": 11.174394051350973
+        },
+        {
+          "aosMs": 1788308220965,
+          "maxMs": 1788308350662,
+          "losMs": 1788308480184,
+          "maxElevation": 16.077998601688634
+        },
+        {
+          "aosMs": 1788314020809,
+          "maxMs": 1788314147221,
+          "losMs": 1788314273465,
+          "maxElevation": 15.684830005642175
+        }
+      ]
+    },
+    {
+      "id": "iss-leo-tromso",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": 0.00006177939347391501,
+          "longitude": -119.68922437004224,
+          "altitudeKm": 420.8263450204622,
+          "azimuth": 316.8900962805805,
+          "elevation": -51.05749091130818,
+          "rangeKm": 10458.22148273414
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": 41.949417624317825,
+          "longitude": -78.45907580034942,
+          "altitudeKm": 420.8723161051412,
+          "azimuth": 293.65445999058664,
+          "elevation": -23.169444328025744,
+          "rangeKm": 5962.966190277929
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": -17.556285048372523,
+          "longitude": -179.8545237299313,
+          "altitudeKm": 426.01770823843526,
+          "azimuth": 22.450283196114583,
+          "elevation": -62.238160422238124,
+          "rangeKm": 11762.236516172708
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": -51.78614888149003,
+          "longitude": -32.444201006303416,
+          "altitudeKm": 440.95187413498024,
+          "azimuth": 217.4430932026595,
+          "elevation": -62.51686793502596,
+          "rangeKm": 11772.516536654903
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": 51.786752605562064,
+          "longitude": 141.53208104474453,
+          "altitudeKm": 422.41448916928584,
+          "azimuth": 41.66120719589542,
+          "elevation": -22.01646569642584,
+          "rangeKm": 5763.56518377565
+        }
+      ],
+      "passes": []
+    },
+    {
+      "id": "iss-leo-antimeridian",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": 0.00006177939347391501,
+          "longitude": -119.68922437004224,
+          "altitudeKm": 420.8263450204622,
+          "azimuth": 89.99992940170442,
+          "elevation": -27.065289166781316,
+          "rangeKm": 6639.383727779759
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": 41.949417624317825,
+          "longitude": -78.45907580034942,
+          "altitudeKm": 420.8723161051412,
+          "azimuth": 47.63772939082943,
+          "elevation": -47.78997463956076,
+          "rangeKm": 9990.579550206146
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": -17.556285048372523,
+          "longitude": -179.8545237299313,
+          "altitudeKm": 426.01770823843526,
+          "azimuth": 179.21925825705992,
+          "elevation": 3.1106789108084265,
+          "rangeKm": 2043.3255156123219
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": -51.78614888149003,
+          "longitude": -32.444201006303416,
+          "altitudeKm": 440.95187413498024,
+          "azimuth": 157.02933371071197,
+          "elevation": -59.784325480039044,
+          "rangeKm": 11513.050829633692
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": 51.786752605562064,
+          "longitude": 141.53208104474453,
+          "altitudeKm": 422.41448916928584,
+          "azimuth": 333.8134175456268,
+          "elevation": -27.402944135189543,
+          "rangeKm": 6677.865935248341
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788246918309,
+          "maxMs": 1788247023739,
+          "losMs": 1788247128309,
+          "maxElevation": 13.46928663262987
+        },
+        {
+          "aosMs": 1788252672215,
+          "maxMs": 1788252820373,
+          "losMs": 1788252967996,
+          "maxElevation": 19.01153019297755
+        },
+        {
+          "aosMs": 1788294419559,
+          "maxMs": 1788294595048,
+          "losMs": 1788294771590,
+          "maxElevation": 27.96214102024483
+        }
+      ]
+    },
+    {
+      "id": "tdrs3-geo-sydney",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": 3.074418905288102,
+          "longitude": -49.19948408707137,
+          "altitudeKm": 35634.11748938712,
+          "azimuth": 143.90128742499203,
+          "elevation": -58.34430652036851,
+          "rangeKm": 47311.95833671941
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": 3.865993312510501,
+          "longitude": -49.249377657784095,
+          "altitudeKm": 35638.26685980821,
+          "azimuth": 143.16063868128512,
+          "elevation": -58.930375799371184,
+          "rangeKm": 47354.1708998408
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": 10.80805168845487,
+          "longitude": -49.23226813295679,
+          "altitudeKm": 35720.05951699192,
+          "azimuth": 136.21021561229372,
+          "elevation": -64.07891903115903,
+          "rangeKm": 47742.86013723034
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": -3.1154426034471836,
+          "longitude": -49.50656860987334,
+          "altitudeKm": 35933.76610017263,
+          "azimuth": 148.03564986096086,
+          "elevation": -53.32123771657865,
+          "rangeKm": 47261.5315629362
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": -3.3278837841181796,
+          "longitude": -49.51051418742074,
+          "altitudeKm": 35932.79755016047,
+          "azimuth": 148.16987608452533,
+          "elevation": -53.1497929678635,
+          "rangeKm": 47247.8156393698
+        }
+      ],
+      "passes": []
+    },
+    {
+      "id": "tdrs3-geo-quito",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": 3.074418905288102,
+          "longitude": -49.19948408707137,
+          "altitudeKm": 35634.11748938712,
+          "azimuth": 83.41899640533269,
+          "elevation": 55.64850521688664,
+          "rangeKm": 36589.521410788955
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": 3.865993312510501,
+          "longitude": -49.249377657784095,
+          "altitudeKm": 35638.26685980821,
+          "azimuth": 81.80976103469374,
+          "elevation": 55.60280972314655,
+          "rangeKm": 36596.16029238066
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": 10.80805168845487,
+          "longitude": -49.23226813295679,
+          "altitudeKm": 35720.05951699192,
+          "azimuth": 68.39102808658151,
+          "elevation": 53.79790163515773,
+          "rangeKm": 36779.31108395902
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": -3.1154426034471836,
+          "longitude": -49.50656860987334,
+          "altitudeKm": 35933.76610017263,
+          "azimuth": 96.0846757243689,
+          "elevation": 56.07835010059927,
+          "rangeKm": 36866.783096176674
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": -3.3278837841181796,
+          "longitude": -49.51051418742074,
+          "altitudeKm": 35932.79755016047,
+          "azimuth": 96.51984293736452,
+          "elevation": 56.0597641048918,
+          "rangeKm": 36866.81300870993
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788236000184,
+          "maxMs": 1788280352695,
+          "losMs": 1788322400184,
+          "maxElevation": 56.101660217323335
+        }
+      ]
+    },
+    {
+      "id": "tdrs3-geo-tromso",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": 3.074418905288102,
+          "longitude": -49.19948408707137,
+          "altitudeKm": 35634.11748938712,
+          "azimuth": 250.43466796242595,
+          "elevation": 1.6353592372174919,
+          "rangeKm": 41342.353288508624
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": 3.865993312510501,
+          "longitude": -49.249377657784095,
+          "altitudeKm": 35638.26685980821,
+          "azimuth": 250.74704284467018,
+          "elevation": 2.3707408447891116,
+          "rangeKm": 41265.46327011072
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": 10.80805168845487,
+          "longitude": -49.23226813295679,
+          "altitudeKm": 35720.05951699192,
+          "azimuth": 253.1201086270488,
+          "elevation": 9.033230364720966,
+          "rangeKm": 40623.94578761875
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": -3.1154426034471836,
+          "longitude": -49.50656860987334,
+          "altitudeKm": 35933.76610017263,
+          "azimuth": 248.69334935521613,
+          "elevation": -4.228954601012521,
+          "rangeKm": 42297.67632194819
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": -3.3278837841181796,
+          "longitude": -49.51051418742074,
+          "altitudeKm": 35932.79755016047,
+          "azimuth": 248.62803418445708,
+          "elevation": -4.4289154199059935,
+          "rangeKm": 42319.05604228825
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788249152371,
+          "maxMs": 1788254597449,
+          "losMs": 1788259976277,
+          "maxElevation": 10.960446471711677
+        }
+      ]
+    },
+    {
+      "id": "tdrs3-geo-antimeridian",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": 3.074418905288102,
+          "longitude": -49.19948408707137,
+          "altitudeKm": 35634.11748938712,
+          "azimuth": 85.93952918931075,
+          "elevation": -46.79507223879621,
+          "rangeKm": 46433.74543788363
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": 3.865993312510501,
+          "longitude": -49.249377657784095,
+          "altitudeKm": 35638.26685980821,
+          "azimuth": 84.9000176174857,
+          "elevation": -46.712596368572285,
+          "rangeKm": 46430.89192400939
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": 10.80805168845487,
+          "longitude": -49.23226813295679,
+          "altitudeKm": 35720.05951699192,
+          "azimuth": 75.84568120995861,
+          "elevation": -46.0334863042614,
+          "rangeKm": 46454.56264240952
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": -3.1154426034471836,
+          "longitude": -49.50656860987334,
+          "altitudeKm": 35933.76610017263,
+          "azimuth": 94.09571103126711,
+          "elevation": -46.47925853814617,
+          "rangeKm": 46708.21396280571
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": -3.3278837841181796,
+          "longitude": -49.51051418742074,
+          "altitudeKm": 35932.79755016047,
+          "azimuth": 94.37429632557706,
+          "elevation": -46.46664995051754,
+          "rangeKm": 46706.15836193259
+        }
+      ],
+      "passes": []
+    },
+    {
+      "id": "les5-meo-sydney",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": -2.430311950318384,
+          "longitude": -9.070431929437774,
+          "altitudeKm": 33384.03740817319,
+          "azimuth": 211.05711090605007,
+          "elevation": -54.541568661600756,
+          "rangeKm": 44790.949485443576
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": -2.3232699053359576,
+          "longitude": -8.723149197166691,
+          "altitudeKm": 33398.72557749906,
+          "azimuth": 211.60637396160413,
+          "elevation": -54.49252671902996,
+          "rangeKm": 44802.07179100615
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": -0.5284624328776056,
+          "longitude": -5.1363137623675925,
+          "altitudeKm": 33544.57132421753,
+          "azimuth": 217.726715168938,
+          "elevation": -54.37497298735704,
+          "rangeKm": 44939.223223549336
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": 1.9546558854628402,
+          "longitude": 6.243447069842375,
+          "altitudeKm": 33358.806129784716,
+          "azimuth": 233.26064284099687,
+          "elevation": -50.18383016567492,
+          "rangeKm": 44429.44166998591
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": 0.4853243872312777,
+          "longitude": 39.34565752332611,
+          "altitudeKm": 33253.34789039784,
+          "azimuth": 257.7792298098611,
+          "elevation": -26.560449415556853,
+          "rangeKm": 42072.56996653199
+        }
+      ],
+      "passes": []
+    },
+    {
+      "id": "les5-meo-quito",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": -2.430311950318384,
+          "longitude": -9.070431929437774,
+          "altitudeKm": 33384.03740817319,
+          "azimuth": 92.52576250202095,
+          "elevation": 11.545096104793798,
+          "rangeKm": 37990.482282401164
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": -2.3232699053359576,
+          "longitude": -8.723149197166691,
+          "altitudeKm": 33398.72557749906,
+          "azimuth": 92.40720661632781,
+          "elevation": 11.191473769664722,
+          "rangeKm": 38042.732119694214
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": -0.5284624328776056,
+          "longitude": -5.1363137623675925,
+          "altitudeKm": 33544.57132421753,
+          "azimuth": 90.49715017618718,
+          "elevation": 7.5526791544522895,
+          "rangeKm": 38579.68200596491
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": 1.9546558854628402,
+          "longitude": 6.243447069842375,
+          "altitudeKm": 33358.806129784716,
+          "azimuth": 88.02259848955356,
+          "elevation": -3.939126324697009,
+          "rangeKm": 39662.03700938927
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": 0.4853243872312777,
+          "longitude": 39.34565752332611,
+          "altitudeKm": 33253.34789039784,
+          "azimuth": 89.54741983049918,
+          "elevation": -35.35916956832197,
+          "rangeKm": 42981.01310227671
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788236000184,
+          "maxMs": 1788236000586,
+          "losMs": 1788240013152,
+          "maxElevation": 11.544937233197594
+        }
+      ]
+    },
+    {
+      "id": "les5-meo-tromso",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": -2.430311950318384,
+          "longitude": -9.070431929437774,
+          "altitudeKm": 33384.03740817319,
+          "azimuth": 209.162316805573,
+          "elevation": 6.341256611684524,
+          "rangeKm": 38542.29198156197
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": -2.3232699053359576,
+          "longitude": -8.723149197166691,
+          "altitudeKm": 33398.72557749906,
+          "azimuth": 208.82589635073506,
+          "elevation": 6.51172934025023,
+          "rangeKm": 38538.682175997295
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": -0.5284624328776056,
+          "longitude": -5.1363137623675925,
+          "altitudeKm": 33544.57132421753,
+          "azimuth": 205.42310951521284,
+          "elevation": 8.937589358811648,
+          "rangeKm": 38425.211766862645
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": 1.9546558854628402,
+          "longitude": 6.243447069842375,
+          "altitudeKm": 33358.806129784716,
+          "azimuth": 193.70410299235388,
+          "elevation": 12.803016337048868,
+          "rangeKm": 37828.07535618803
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": 0.4853243872312777,
+          "longitude": 39.34565752332611,
+          "altitudeKm": 33253.34789039784,
+          "azimuth": 158.30025306471057,
+          "elevation": 10.429082225839549,
+          "rangeKm": 37971.3289451705
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788250634559,
+          "maxMs": 1788271071876,
+          "losMs": 1788293856121,
+          "maxElevation": 13.38594156050973
+        },
+        {
+          "aosMs": 1788322334090,
+          "maxMs": 1788322399801,
+          "losMs": 1788322400184,
+          "maxElevation": 10.012982758186805
+        }
+      ]
+    },
+    {
+      "id": "les5-meo-antimeridian",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": -2.430311950318384,
+          "longitude": -9.070431929437774,
+          "altitudeKm": 33384.03740817319,
+          "azimuth": 105.21129634334046,
+          "elevation": -81.99021267345618,
+          "rangeKm": 46068.11611789493
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": -2.3232699053359576,
+          "longitude": -8.723149197166691,
+          "altitudeKm": 33398.72557749906,
+          "azimuth": 105.12560029501944,
+          "elevation": -82.30289297947826,
+          "rangeKm": 46088.32297996773
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": -0.5284624328776056,
+          "longitude": -5.1363137623675925,
+          "altitudeKm": 33544.57132421753,
+          "azimuth": 95.99161391821097,
+          "elevation": -85.63316324474786,
+          "rangeKm": 46279.37378167362
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": 1.9546558854628402,
+          "longitude": 6.243447069842375,
+          "altitudeKm": 33358.806129784716,
+          "azimuth": 287.14793210551954,
+          "elevation": -84.28055913803901,
+          "rangeKm": 46078.219705138974
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": 0.4853243872312777,
+          "longitude": 39.34565752332611,
+          "altitudeKm": 33253.34789039784,
+          "azimuth": 270.7630242187721,
+          "elevation": -55.74874174025507,
+          "rangeKm": 44740.59457958209
+        }
+      ],
+      "passes": []
+    },
+    {
+      "id": "rosto-heo-sydney",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": -31.74587247796554,
+          "longitude": -26.527656119729528,
+          "altitudeKm": 2125.969888832453,
+          "azimuth": 182.1120185875262,
+          "elevation": -51.910739120361015,
+          "rangeKm": 12569.648948368314
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": -62.01590409127258,
+          "longitude": 14.608508185901997,
+          "altitudeKm": 2050.1586647499107,
+          "azimuth": 199.2759058050658,
+          "elevation": -29.294361415895427,
+          "rangeKm": 9456.814372629988
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": 3.975158940717405,
+          "longitude": 93.1762628677152,
+          "altitudeKm": 1894.2509607074226,
+          "azimuth": 292.42233103692104,
+          "elevation": -22.01133559051593,
+          "rangeKm": 8169.1559449906945
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": 64.84321107894901,
+          "longitude": 40.62149521343187,
+          "altitudeKm": 2048.9338237272705,
+          "azimuth": 328.99253515361943,
+          "elevation": -60.76988120297129,
+          "rangeKm": 13358.884996252804
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": -4.477805411690862,
+          "longitude": 134.83465145101627,
+          "altitudeKm": 2153.3475300473065,
+          "azimuth": 328.9176656698702,
+          "elevation": 9.456844754476599,
+          "rangeKm": 4708.593454581345
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788273592527,
+          "maxMs": 1788274215350,
+          "losMs": 1788274821590,
+          "maxElevation": 33.86878809178704
+        },
+        {
+          "aosMs": 1788281391590,
+          "maxMs": 1788282118282,
+          "losMs": 1788282824559,
+          "maxElevation": 63.933470014375374
+        },
+        {
+          "aosMs": 1788289767684,
+          "maxMs": 1788290239591,
+          "losMs": 1788290702371,
+          "maxElevation": 19.123866181320356
+        },
+        {
+          "aosMs": 1788298443777,
+          "maxMs": 1788298621149,
+          "losMs": 1788298796746,
+          "maxElevation": 11.070577495527235
+        },
+        {
+          "aosMs": 1788306344090,
+          "maxMs": 1788306912798,
+          "losMs": 1788307460184,
+          "maxElevation": 29.307777540438742
+        },
+        {
+          "aosMs": 1788314253777,
+          "maxMs": 1788314923792,
+          "losMs": 1788315572840,
+          "maxElevation": 77.26833061765161
+        }
+      ]
+    },
+    {
+      "id": "rosto-heo-quito",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": -31.74587247796554,
+          "longitude": -26.527656119729528,
+          "altitudeKm": 2125.969888832453,
+          "azimuth": 127.93327058385646,
+          "elevation": -14.776275090784992,
+          "rangeKm": 7471.449851439412
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": -62.01590409127258,
+          "longitude": 14.608508185901997,
+          "altitudeKm": 2050.1586647499107,
+          "azimuth": 151.9318611588276,
+          "elevation": -37.99964860827775,
+          "rangeKm": 10671.927190261531
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": 3.975158940717405,
+          "longitude": 93.1762628677152,
+          "altitudeKm": 1894.2509607074226,
+          "azimuth": 65.57567305685936,
+          "elevation": -84.82651462620792,
+          "rangeKm": 14607.234248464973
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": 64.84321107894901,
+          "longitude": 40.62149521343187,
+          "altitudeKm": 2048.9338237272705,
+          "azimuth": 22.431010942604683,
+          "elevation": -44.75146132637338,
+          "rangeKm": 11576.472307905522
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": -4.477805411690862,
+          "longitude": 134.83465145101627,
+          "altitudeKm": 2153.3475300473065,
+          "azimuth": 261.6517391296145,
+          "elevation": -70.71228575130993,
+          "rangeKm": 14289.739464567278
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788242113621,
+          "maxMs": 1788242842701,
+          "losMs": 1788243565809,
+          "maxElevation": 67.48428794713341
+        },
+        {
+          "aosMs": 1788250260496,
+          "maxMs": 1788250771152,
+          "losMs": 1788251282840,
+          "maxElevation": 21.83834163590413
+        },
+        {
+          "aosMs": 1788284317059,
+          "maxMs": 1788284949563,
+          "losMs": 1788285580809,
+          "maxElevation": 55.11198518477498
+        },
+        {
+          "aosMs": 1788292384246,
+          "maxMs": 1788292864562,
+          "losMs": 1788293353621,
+          "maxElevation": 23.780179317570504
+        }
+      ]
+    },
+    {
+      "id": "rosto-heo-tromso",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": -31.74587247796554,
+          "longitude": -26.527656119729528,
+          "altitudeKm": 2125.969888832453,
+          "azimuth": 219.35321023137087,
+          "elevation": -47.14728566253279,
+          "rangeKm": 11965.306673611809
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": -62.01590409127258,
+          "longitude": 14.608508185901997,
+          "altitudeKm": 2050.1586647499107,
+          "azimuth": 182.74199684887213,
+          "elevation": -62.267902077079825,
+          "rangeKm": 13491.65179998797
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": 3.975158940717405,
+          "longitude": 93.1762628677152,
+          "altitudeKm": 1894.2509607074226,
+          "azimuth": 103.39799088217144,
+          "elevation": -31.70990762452289,
+          "rangeKm": 9596.335419860972
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": 64.84321107894901,
+          "longitude": 40.62149521343187,
+          "altitudeKm": 2048.9338237272705,
+          "azimuth": 109.49645935409345,
+          "elevation": 53.942485949545585,
+          "rangeKm": 2388.6605124533517
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": -4.477805411690862,
+          "longitude": 134.83465145101627,
+          "altitudeKm": 2153.3475300473065,
+          "azimuth": 66.89915600081189,
+          "elevation": -44.834650542116506,
+          "rangeKm": 11732.027388767568
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788263033465,
+          "maxMs": 1788263465743,
+          "losMs": 1788263909559,
+          "maxElevation": 20.057745151634602
+        },
+        {
+          "aosMs": 1788270601902,
+          "maxMs": 1788271205899,
+          "losMs": 1788271837527,
+          "maxElevation": 41.24019818252442
+        },
+        {
+          "aosMs": 1788278387371,
+          "maxMs": 1788279049923,
+          "losMs": 1788279748152,
+          "maxElevation": 63.505416647934005
+        },
+        {
+          "aosMs": 1788286272684,
+          "maxMs": 1788286951938,
+          "losMs": 1788287666277,
+          "maxElevation": 70.65367130809567
+        },
+        {
+          "aosMs": 1788294175809,
+          "maxMs": 1788294843393,
+          "losMs": 1788295540809,
+          "maxElevation": 56.69621226967427
+        },
+        {
+          "aosMs": 1788302073309,
+          "maxMs": 1788302662339,
+          "losMs": 1788303271902,
+          "maxElevation": 33.73087259949017
+        },
+        {
+          "aosMs": 1788310032684,
+          "maxMs": 1788310368240,
+          "losMs": 1788310709559,
+          "maxElevation": 14.909029639368041
+        }
+      ]
+    },
+    {
+      "id": "rosto-heo-antimeridian",
+      "samples": [
+        {
+          "instant": "2026-09-01T04:13:20.184Z",
+          "latitude": -31.74587247796554,
+          "longitude": -26.527656119729528,
+          "altitudeKm": 2125.969888832453,
+          "azimuth": 144.13429093288045,
+          "elevation": -66.85199017467495,
+          "rangeKm": 13984.571014357107
+        },
+        {
+          "instant": "2026-09-01T04:28:20.184Z",
+          "latitude": -62.01590409127258,
+          "longitude": 14.608508185901997,
+          "altitudeKm": 2050.1586647499107,
+          "azimuth": 187.72214272444512,
+          "elevation": -53.74724246544534,
+          "rangeKm": 12662.077866983684
+        },
+        {
+          "instant": "2026-09-01T07:13:20.184Z",
+          "latitude": 3.975158940717405,
+          "longitude": 93.1762628677152,
+          "altitudeKm": 1894.2509607074226,
+          "azimuth": 273.96116012082535,
+          "elevation": -35.57135397258374,
+          "rangeKm": 10153.570334329142
+        },
+        {
+          "instant": "2026-09-01T16:13:20.184Z",
+          "latitude": 64.84321107894901,
+          "longitude": 40.62149521343187,
+          "altitudeKm": 2048.9338237272705,
+          "azimuth": 342.88385626349606,
+          "elevation": -48.828814737751394,
+          "rangeKm": 12087.474667398585
+        },
+        {
+          "instant": "2026-09-02T16:13:20.184Z",
+          "latitude": -4.477805411690862,
+          "longitude": 134.83465145101627,
+          "altitudeKm": 2153.3475300473065,
+          "azimuth": 263.71873426838414,
+          "elevation": -3.501463158279161,
+          "rangeKm": 6068.8983111416655
+        }
+      ],
+      "passes": [
+        {
+          "aosMs": 1788265080496,
+          "maxMs": 1788265785574,
+          "losMs": 1788266484402,
+          "maxElevation": 51.883585927942036
+        },
+        {
+          "aosMs": 1788273103621,
+          "maxMs": 1788273708650,
+          "losMs": 1788274313465,
+          "maxElevation": 30.35295296567661
+        },
+        {
+          "aosMs": 1788307304090,
+          "maxMs": 1788307900886,
+          "losMs": 1788308494246,
+          "maxElevation": 40.5435771972373
+        },
+        {
+          "aosMs": 1788315253621,
+          "maxMs": 1788315812018,
+          "losMs": 1788316380965,
+          "maxElevation": 33.52963210820119
+        }
+      ]
+    }
+  ]
+}

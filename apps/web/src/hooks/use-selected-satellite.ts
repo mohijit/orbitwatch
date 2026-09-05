@@ -36,6 +36,20 @@ import type { TimelineMode } from "../components/timeline/timeline";
 
 export interface SelectedTelemetry {
   readonly catalogId: string;
+  /**
+   * The object's name, and its international designator.
+   *
+   * Both are read from the OMM that produced the position, not from a separate
+   * metadata request. That costs nothing — the record is already in hand — and it
+   * keeps the name provenance-consistent with the elements shown beside it: what the
+   * panel displays is what the provider published in THIS element set, not a name
+   * fetched at a different time from a different endpoint that could disagree.
+   *
+   * `name` falls back to the catalog id, because a TLE-format set carries no
+   * OBJECT_NAME. Showing the number is honest in that case; inventing a name is not.
+   */
+  readonly name: string;
+  readonly internationalDesignator: string | undefined;
   readonly satrec: SatRec;
   readonly accuracy: AccuracyAssessment;
   readonly orbitClass: OrbitClass;
@@ -51,8 +65,32 @@ export type SelectedTelemetryState =
 
 const GROUND_TRACK_WINDOW_MINUTES = 100; // roughly one LEO orbit either side of `time`
 
+interface SatelliteIdentity {
+  readonly name: string;
+  readonly internationalDesignator: string | undefined;
+}
+
+/**
+ * Reads the object's published identity out of the raw OMM.
+ *
+ * Typed as `unknown` and checked, rather than cast: `omm` is `Record<string, unknown>`
+ * in the contract on purpose, since it is the provider's record verbatim rather than a
+ * shape we control. A provider that stops sending OBJECT_NAME should degrade to the
+ * catalog number, not render `undefined` into the header.
+ */
+function identityOf(omm: Record<string, unknown>, catalogId: string): SatelliteIdentity {
+  const name = omm["OBJECT_NAME"];
+  const designator = omm["OBJECT_ID"];
+  return {
+    name: typeof name === "string" && name.trim() !== "" ? name.trim() : catalogId,
+    internationalDesignator:
+      typeof designator === "string" && designator.trim() !== "" ? designator.trim() : undefined,
+  };
+}
+
 function derive(
   catalogId: string,
+  identity: SatelliteIdentity,
   satrec: SatRec,
   epoch: Date,
   time: number,
@@ -90,6 +128,8 @@ function derive(
 
   return {
     catalogId,
+    name: identity.name,
+    internationalDesignator: identity.internationalDesignator,
     satrec,
     accuracy,
     orbitClass,
@@ -103,7 +143,9 @@ export function useSelectedSatellite(
   time: number,
   mode: TimelineMode,
 ): SelectedTelemetryState {
-  const [fetched, setFetched] = useState<{ satrec: SatRec; epoch: Date } | undefined>(undefined);
+  const [fetched, setFetched] = useState<
+    { satrec: SatRec; epoch: Date; identity: SatelliteIdentity } | undefined
+  >(undefined);
   const [state, setState] = useState<SelectedTelemetryState>({ status: "idle" });
 
   // Fetch: on selection change, and on every SIMULATION instant (historical replay
@@ -123,7 +165,11 @@ export function useSelectedSatellite(
         const response = await fetchElements(catalogId, mode === "simulation" ? new Date(time) : undefined);
         if (cancelled) return;
         const { satrec } = parseOmm(response.elements.omm as OMMJsonObject);
-        setFetched({ satrec, epoch: new Date(response.elements.epoch) });
+        setFetched({
+          satrec,
+          epoch: new Date(response.elements.epoch),
+          identity: identityOf(response.elements.omm, catalogId),
+        });
       } catch (error) {
         if (cancelled) return;
         setState({
@@ -141,7 +187,10 @@ export function useSelectedSatellite(
   // Recompute: every tick, from whatever was last fetched. No network.
   useEffect(() => {
     if (catalogId === undefined || fetched === undefined) return;
-    setState({ status: "ready", ...derive(catalogId, fetched.satrec, fetched.epoch, time) });
+    setState({
+      status: "ready",
+      ...derive(catalogId, fetched.identity, fetched.satrec, fetched.epoch, time),
+    });
   }, [catalogId, fetched, time]);
 
   return state;

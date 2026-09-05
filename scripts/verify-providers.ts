@@ -80,6 +80,30 @@ const PROBES: readonly ProbeSpec[] = [
     fixture: "satnogs-satellite-iss.json",
   },
   {
+    provider: "satnogs-network",
+    resource: "stations",
+    // Ground stations that actually observe. Paged, so a page size is set: the shape
+    // is what is being verified, not the volume.
+    url: "https://network.satnogs.org/api/stations/?format=json&page_size=25",
+    verifies: "ground station shape: position, status, antennas, last seen",
+    fixture: "satnogs-network-stations.json",
+    timeoutMs: 90_000,
+  },
+  {
+    provider: "nasa-donki",
+    resource: "notifications",
+    // DEMO_KEY is heavily throttled and is deliberately what a first verification
+    // uses: if the shape only parses with a private key, that is worth discovering
+    // here rather than in production.
+    url:
+      "https://api.nasa.gov/DONKI/notifications?startDate=2026-08-01&endDate=2026-08-31" +
+      "&type=all&api_key=DEMO_KEY",
+    verifies: "DONKI notification shape: message type, issue time, body",
+    fixture: "nasa-donki-notifications.json",
+    maxFixtureBytes: 400_000,
+    timeoutMs: 90_000,
+  },
+  {
     provider: "launch-library",
     resource: "upcoming",
     url: "https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=5&mode=list",

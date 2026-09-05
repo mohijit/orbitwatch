@@ -194,6 +194,16 @@ export type CelestrakGpQuery =
  * several of our once-per-cycle download budgets to obtain mostly the same objects.
  * The ingestion strategy is: fetch `active` as the catalog backbone, and fetch a
  * narrow group only when it carries objects `active` omits.
+ *
+ * `visual` is the one deliberate exception, and it is worth stating why. Every object
+ * in it is already in `active`, so by the rule above we would never fetch it. But what
+ * we need from it is not the elements — it is the MEMBERSHIP. GP records carry no
+ * size, albedo, shape or attitude, so nothing in `active` says which objects are
+ * bright enough to see. That list is the only brightness information CelesTrak
+ * publishes, it cannot be derived from anything we already hold, and without it
+ * "Visible Tonight" degenerates into every sunlit object above the horizon — measured
+ * at 3,614 passes over one observer in one night. So `visual` is fetched for the list,
+ * and the elements it returns are a harmless duplicate.
  */
 export const CELESTRAK_GROUPS = [
   "active",

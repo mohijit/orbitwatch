@@ -42,3 +42,5 @@ export * from "./schemas/celestrak.js";
 
 // SatNOGS DB. VERIFIED — see schemas/satnogs.ts.
 export * from "./schemas/satnogs.js";
+export * from "./schemas/satnogs-network.js";
+export * from "./schemas/nasa-donki.js";

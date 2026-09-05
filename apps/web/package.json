@@ -13,7 +13,8 @@
     "lint": "eslint src",
     "clean": "rimraf .next .turbo public/cesium",
     "cesium:copy": "node scripts/copy-cesium-assets.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test": "vitest run"
   },
   "dependencies": {
     "@orbitwatch/contracts": "workspace:*",
@@ -24,13 +25,16 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@orbitwatch/eslint-config": "workspace:*",
     "@orbitwatch/typescript-config": "workspace:*",
+    "@playwright/test": "^1.62.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "axe-core": "^4.13.0",
     "eslint": "^9.36.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.2",
-    "@playwright/test": "^1.62.1"
+    "vitest": "^3.2.7"
   }
 }

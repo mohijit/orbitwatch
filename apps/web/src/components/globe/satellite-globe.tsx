@@ -1,11 +1,25 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import type { ObserverLocation } from "@orbitwatch/orbit-core";
 
 import type { CatalogTickState } from "../../hooks/use-catalog-positions";
 import { POSITION_FIELDS } from "../../hooks/use-catalog-positions";
+import { COARSE_POINTER, useMediaQuery } from "../../hooks/use-media-query";
 import type { SelectedTelemetryState } from "../../hooks/use-selected-satellite";
 import { CESIUM_WIDGET_CSS_HREF, loadCesium, type CesiumModule } from "./cesium-loader";
+import {
+  GIBS_ATTRIBUTION,
+  GIBS_LEVEL_ZERO_TILES_X,
+  GIBS_LEVEL_ZERO_TILES_Y,
+  GIBS_TILE_SIZE,
+  findGibsLayer,
+  gibsMaximumLevel,
+  gibsTileMatrixLabels,
+  gibsTileUrl,
+  imageryDateFor,
+} from "./imagery";
 import type * as CesiumNamespace from "cesium";
 
 /**
@@ -31,6 +45,29 @@ const NOT_RENDERABLE_ALTITUDE = -1; // pushes an unusable position below the ell
  */
 const MAX_EXTRAPOLATION_SECONDS = 5;
 
+/** Stable id so the observer marker can be replaced without touching other entities. */
+const OBSERVER_ENTITY_ID = "observer-location";
+
+/**
+ * Hit tolerance for a fingertip, in CSS pixels.
+ *
+ * Smaller than the ~44px a finger actually covers, on purpose: at 44 the box spans a
+ * meaningful slice of a crowded orbital shell and starts returning a neighbour of
+ * whatever was aimed at. 28 is wide enough that an ordinary tap connects and narrow
+ * enough that the object it connects with is the one under the finger.
+ */
+const TOUCH_PICK_BOX_PX = 28;
+
+/**
+ * How big a catalog point is drawn, by pointer type.
+ *
+ * Touch gets slightly larger dots because they double as the aiming target, and a 3px
+ * dot gives a finger nothing to aim at. Deliberately only one pixel larger: 16,655 fat
+ * points stop being a catalog and become a smear across the limb.
+ */
+const POINT_SIZE = { fine: 3, coarse: 4 } as const;
+const SELECTED_POINT_SIZE = { fine: 8, coarse: 12 } as const;
+
 export interface SatelliteGlobeProps {
   readonly catalogState: CatalogTickState;
   readonly selectedCatalogId: string | undefined;
@@ -41,6 +78,22 @@ export interface SatelliteGlobeProps {
    * instant is fixed and positions must hold still.
    */
   readonly live: boolean;
+  /** The observing location to mark, if one is set. */
+  readonly observer: ObserverLocation | undefined;
+  /**
+   * While true, a click on the globe sets the observing location instead of selecting
+   * a satellite. Modal, and the UI says so — a click that silently means two different
+   * things depending on hidden state is how people lose their selection.
+   */
+  readonly pickingLocation: boolean;
+  readonly onPickLocation: (latitude: number, longitude: number) => void;
+  /**
+   * Which NASA imagery layer to overlay, or undefined for the bundled base map.
+   *
+   * A prop rather than internal state: the control lives in the panel stack with
+   * everything else, and this app keeps state in the page and flows it one way down.
+   */
+  readonly imageryLayerId: string | undefined;
 }
 
 type CesiumViewer = InstanceType<CesiumModule["Viewer"]>;
@@ -52,7 +105,23 @@ export function SatelliteGlobe({
   onSelect,
   telemetry,
   live,
+  observer,
+  pickingLocation,
+  onPickLocation,
+  imageryLayerId,
 }: SatelliteGlobeProps) {
+  /*
+   * Touch hardware gets bigger points and a halved frame rate.
+   *
+   * Both are about the same thing — a fingertip and a phone SoC are what a desktop
+   * design silently assumes away. `false` until after mount, so the first frame draws
+   * the fine-pointer sizes and the effect below corrects them; a point that is one pixel
+   * wrong for one frame is not worth a hydration mismatch to avoid.
+   */
+  const coarsePointer = useMediaQuery(COARSE_POINTER);
+  const pointerClass = coarsePointer ? "coarse" : "fine";
+  const frameIntervalMs = coarsePointer ? 1000 / 30 : 0;
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
   const pointsRef = useRef<CesiumPoints | null>(null);
@@ -61,6 +130,90 @@ export function SatelliteGlobe({
   const cesiumRef = useRef<CesiumModule | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+
+  /**
+   * Camera control without a pointer.
+   *
+   * Cesium ships mouse and touch handlers and no keyboard ones, so a globe is
+   * ordinarily unreachable for anyone who cannot drag it. These are the same three
+   * gestures — rotate, zoom, reset — bound to the keys people already expect.
+   *
+   * `preventDefault` matters more than it looks: arrow keys scroll the document by
+   * default, so without it a focused globe would scroll the page out from under
+   * itself while appearing to ignore the key. That is worse than no handler at all.
+   *
+   * Amounts are proportional to the camera's height above the ellipsoid, so one press
+   * moves a sensible fraction of what is on screen whether the view is the whole Earth
+   * or one city.
+   */
+  const handleGlobeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (viewer === null || Cesium === null) return;
+
+    const camera = viewer.camera;
+    const height = camera.positionCartographic.height;
+    const moveRate = height / 20;
+    const rotateRadians = Cesium.Math.toRadians(3);
+
+    switch (event.key) {
+      case "ArrowLeft":
+        camera.rotateRight(rotateRadians);
+        break;
+      case "ArrowRight":
+        camera.rotateLeft(rotateRadians);
+        break;
+      case "ArrowUp":
+        camera.rotateDown(rotateRadians);
+        break;
+      case "ArrowDown":
+        camera.rotateUp(rotateRadians);
+        break;
+      case "+":
+      case "=":
+        camera.moveForward(moveRate);
+        break;
+      case "-":
+      case "_":
+        camera.moveBackward(moveRate);
+        break;
+      case "Home":
+        camera.flyHome(0.5);
+        break;
+      default:
+        // Every other key — Tab included — must keep its normal behaviour, or the
+        // globe becomes a place focus goes into and cannot leave.
+        return;
+    }
+
+    event.preventDefault();
+    viewer.scene.requestRender();
+  }, []);
+  // The Cesium input handler is installed once, so it must read these through refs
+  // rather than closing over the values that existed when the viewer was built.
+  const pickingRef = useRef(pickingLocation);
+  pickingRef.current = pickingLocation;
+  const onPickLocationRef = useRef(onPickLocation);
+  onPickLocationRef.current = onPickLocation;
+
+  /**
+   * Whether the viewer exists yet. State, not a ref, and that is the whole point.
+   *
+   * Cesium arrives asynchronously — a 6 MB engine fetched and evaluated after mount —
+   * so the effects below routinely run before there is anything to draw into. Held in
+   * a ref, the viewer becoming available re-renders nothing, so those effects would
+   * never run again on their own: they only re-run when `catalogState`, the selection
+   * or the timeline mode changes. In LIVE mode a propagation tick arrives every second
+   * and hides that, which is why this survived M3. It is not hidden when the clock is
+   * not advancing — SIMULATION, a backgrounded tab, or the pinned clock the E2E suite
+   * uses — and there the catalog can become ready first and the globe then stays empty
+   * permanently, with no error anywhere. Found by multi-object.spec.ts, which read the
+   * point collection back out of the live scene and saw zero primitives in it.
+   */
+  const [globeReady, setGlobeReady] = useState(false);
+
+  /** The layer object currently applied, so it can be removed on change. */
+  const overlayRef = useRef<unknown>(null);
 
   // Viewer: created once.
   useEffect(() => {
@@ -115,7 +268,41 @@ export function SatelliteGlobe({
       // a hit needs no lookup — the picked object already carries the answer.
       const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
       handler.setInputAction((click: { position: CesiumNamespace.Cartesian2 }) => {
-        const picked: unknown = viewer.scene.pick(click.position);
+        if (pickingRef.current) {
+          // pickEllipsoid, not scene.pick: the user is choosing a place on Earth, and
+          // scene.pick would return whichever satellite primitive happened to be under
+          // the cursor. Returns undefined when the click misses the globe entirely —
+          // space, off the limb — which must not be read as a coordinate of zero.
+          const ground = viewer.camera.pickEllipsoid(
+            click.position,
+            viewer.scene.globe.ellipsoid,
+          );
+          if (ground !== undefined) {
+            const carto = Cesium.Cartographic.fromCartesian(ground);
+            onPickLocationRef.current(
+              Cesium.Math.toDegrees(carto.latitude),
+              Cesium.Math.toDegrees(carto.longitude),
+            );
+          }
+          return;
+        }
+
+        /*
+         * The pick box is sized to the pointer, not to the target.
+         *
+         * `scene.pick` defaults to a 3x3 pixel rectangle, which is the same size as the
+         * points themselves — fine for a mouse cursor, and useless for a fingertip
+         * roughly 44 pixels across. A catalog you cannot tap is a catalog you cannot use
+         * on a phone, and it fails silently: every tap lands on empty space and reads as
+         * a deselect. Widened to a finger-sized box on touch input.
+         *
+         * Read at click time rather than captured once, because a hybrid device can gain
+         * or lose a coarse pointer between the viewer being built and this firing.
+         */
+        const coarse =
+          typeof window.matchMedia === "function" && window.matchMedia(COARSE_POINTER).matches;
+        const pickBox = coarse ? TOUCH_PICK_BOX_PX : 3;
+        const picked: unknown = viewer.scene.pick(click.position, pickBox, pickBox);
         if (
           picked !== undefined &&
           typeof picked === "object" &&
@@ -129,7 +316,26 @@ export function SatelliteGlobe({
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
+      /*
+       * One tab stop for the globe, not two.
+       *
+       * Cesium gives its canvas `tabindex="0"` and focuses it during initialisation.
+       * That produced two problems at once: a second, unlabelled tab stop for the same
+       * widget, and — because it happens on load — focus sitting in the middle of the
+       * page before the user has pressed anything, so their first Tab moved on from
+       * the globe instead of reaching the skip link.
+       *
+       * The container above is the accessible interface: it is labelled, it carries
+       * the key handlers, and it is where focus should land. The canvas is taken out
+       * of the tab order and blurred, which leaves exactly one way in.
+       */
+      viewer.canvas.setAttribute("tabindex", "-1");
+      if (document.activeElement === viewer.canvas) viewer.canvas.blur();
+
       viewerRef.current = viewer;
+      // Last, and only after every ref above is populated: this is what re-runs the
+      // effects that draw into the viewer.
+      setGlobeReady(true);
     })();
 
     return () => {
@@ -138,6 +344,10 @@ export function SatelliteGlobe({
       if (viewer !== null && !viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
       pointsRef.current = null;
+      // Cleared as well as set, so StrictMode's double mount does not leave this true
+      // while pointing at a destroyed viewer — the drawing effects would then run once
+      // against nothing and never be re-triggered.
+      setGlobeReady(false);
     };
   }, []);
 
@@ -165,7 +375,7 @@ export function SatelliteGlobe({
         points.add({
           id: catalogId,
           position: Cesium.Cartesian3.ZERO,
-          pixelSize: 3,
+          pixelSize: POINT_SIZE[pointerClass],
           color: Cesium.Color.fromCssColorString("#8ecbff").withAlpha(0.85),
           outlineWidth: 0,
         });
@@ -176,14 +386,29 @@ export function SatelliteGlobe({
     const count = catalogState.catalogIds.length;
     const tickTime = catalogState.tickTime;
 
-    const selectedColor = Cesium.Color.fromCssColorString("#ffcc55");
-    const normalColor = Cesium.Color.fromCssColorString("#8ecbff").withAlpha(0.85);
     const hidden = Cesium.Cartesian3.fromDegrees(0, 0, NOT_RENDERABLE_ALTITUDE);
 
     let frame = 0;
+    let lastDrawnAt = 0;
     const scratch = new Cesium.Cartesian3();
 
-    const render = (): void => {
+    const render = (now: number): void => {
+      /*
+       * On touch hardware this runs at half rate.
+       *
+       * The frame loop's job is dead reckoning between 1 Hz worker ticks, and it does
+       * not need sixty samples a second to do that: at 30 Hz the ISS moves 255 m
+       * between drawn frames, against 7.66 km per worker tick, so the motion is still
+       * far smoother than the data underneath it. What it does halve is the per-frame
+       * cost of writing 16,655 positions — which is main-thread work competing with
+       * React and touch handling on a chip with a fraction of a desktop's budget.
+       */
+      if (frameIntervalMs > 0 && now - lastDrawnAt < frameIntervalMs) {
+        frame = requestAnimationFrame(render);
+        return;
+      }
+      lastDrawnAt = now;
+
       // Only extrapolate while the timeline is actually running forward in real time.
       // In SIMULATION the instant is frozen, so wall-clock elapsed time has no bearing
       // on where these objects are and advancing them would be invention.
@@ -210,11 +435,18 @@ export function SatelliteGlobe({
         scratch.y = ((positions[offset + 1] as number) + (positions[offset + 4] as number) * dtSeconds) * 1000;
         scratch.z = ((positions[offset + 2] as number) + (positions[offset + 5] as number) * dtSeconds) * 1000;
         point.position = scratch;
-
-        const isSelected = catalogState.catalogIds[index] === selectedCatalogId;
-        point.pixelSize = isSelected ? 8 : 3;
-        point.color = isSelected ? selectedColor : normalColor;
       }
+
+      /*
+       * Size and colour are NOT written here.
+       *
+       * They used to be, which meant 16,655 `pixelSize` writes plus 16,655 `color`
+       * writes every frame to restate values that change only when the selection does —
+       * and each write dirties the collection for the next update pass. Two properties
+       * that change once a minute were costing more per frame than the position that
+       * changes every frame. They now live in the effect below, keyed on the selection
+       * that is the only thing that alters them.
+       */
 
       viewer.scene.requestRender();
       frame = requestAnimationFrame(render);
@@ -224,7 +456,47 @@ export function SatelliteGlobe({
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [catalogState, selectedCatalogId, live]);
+    // `selectedCatalogId` is deliberately absent: this loop no longer draws the
+    // selection, and leaving it here would tear down and rebuild the whole frame loop
+    // every time a user clicked a different satellite.
+  }, [globeReady, catalogState, live, pointerClass, frameIntervalMs]);
+
+  /*
+   * How the selected object is drawn — the only two point properties that are not
+   * position, moved out of the frame loop and keyed on the thing that changes them.
+   *
+   * Runs on a rebuilt catalog and on a changed pointer class as well as on selection,
+   * because both leave every point needing its size restated. It depends on
+   * `catalogState.catalogIds` rather than `catalogState`, which is a reference the
+   * worker hook holds steady between rebuilds — depending on the whole state would run
+   * this once per propagation tick and put the cost straight back.
+   */
+  const catalogIds = catalogState.status === "ready" ? catalogState.catalogIds : undefined;
+  useEffect(() => {
+    const Cesium = cesiumRef.current;
+    const points = pointsRef.current;
+    const viewer = viewerRef.current;
+    if (Cesium === null || points === null || viewer === null || catalogIds === undefined) return;
+    // The build effect and this one both run on a catalog change, in declaration order,
+    // but a mid-load state can leave the collection short. Trust the collection's length.
+    if (points.length !== catalogIds.length) return;
+
+    const selectedColor = Cesium.Color.fromCssColorString("#ffcc55");
+    const normalColor = Cesium.Color.fromCssColorString("#8ecbff").withAlpha(0.85);
+    const size = POINT_SIZE[pointerClass];
+    const selectedSize = SELECTED_POINT_SIZE[pointerClass];
+
+    for (let index = 0; index < catalogIds.length; index += 1) {
+      const point = points.get(index);
+      const isSelected = catalogIds[index] === selectedCatalogId;
+      point.pixelSize = isSelected ? selectedSize : size;
+      point.color = isSelected ? selectedColor : normalColor;
+    }
+
+    // The frame loop requests a render only while it is running; this must not depend
+    // on that to become visible.
+    viewer.scene.requestRender();
+  }, [globeReady, catalogIds, selectedCatalogId, pointerClass]);
 
   // Ground track + footprint for the selected object.
   useEffect(() => {
@@ -278,13 +550,139 @@ export function SatelliteGlobe({
     }
 
     viewer.scene.requestRender();
-  }, [telemetry]);
+  }, [globeReady, telemetry]);
+
+  // Observer marker.
+  //
+  // Its own effect and its own entity id, so it survives selection changes and is not
+  // swept away with the ground track. Seeing where the app thinks you are is the
+  // fastest way to catch a wrong location, which otherwise only shows up as pass times
+  // that are quietly hours out.
+  useEffect(() => {
+    const Cesium = cesiumRef.current;
+    const viewer = viewerRef.current;
+    if (Cesium === null || viewer === null) return;
+
+    const existing = viewer.entities.getById(OBSERVER_ENTITY_ID);
+    if (existing !== undefined) viewer.entities.remove(existing);
+
+    if (observer !== undefined) {
+      viewer.entities.add({
+        id: OBSERVER_ENTITY_ID,
+        position: Cesium.Cartesian3.fromDegrees(
+          observer.longitude,
+          observer.latitude,
+          // Metres for Cesium, kilometres in the model.
+          observer.altitude * 1000,
+        ),
+        point: {
+          pixelSize: 10,
+          color: Cesium.Color.fromCssColorString("#5ef2a0"),
+          outlineColor: Cesium.Color.fromCssColorString("#06210f"),
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: observer.label ?? "You",
+          font: "12px system-ui, sans-serif",
+          fillColor: Cesium.Color.fromCssColorString("#5ef2a0"),
+          pixelOffset: new Cesium.Cartesian2(0, -18),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+    }
+
+    viewer.scene.requestRender();
+  }, [globeReady, observer]);
+
+  /**
+   * Apply or remove the NASA imagery overlay.
+   *
+   * Added as an overlay on top of Natural Earth rather than replacing the base layer:
+   * GIBS has no tiles over the poles at every zoom and a failed tile would leave a hole
+   * in the globe, where an overlay simply shows the base map through.
+   */
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!globeReady || viewer === null || Cesium === null) return;
+
+    const layers = viewer.imageryLayers as {
+      addImageryProvider: (provider: unknown) => unknown;
+      remove: (layer: unknown, destroy?: boolean) => void;
+    };
+
+    if (overlayRef.current !== null) {
+      layers.remove(overlayRef.current, true);
+      overlayRef.current = null;
+    }
+
+    const layer = imageryLayerId === undefined ? undefined : findGibsLayer(imageryLayerId);
+    if (layer !== undefined) {
+      /*
+       * Every one of these options is load-bearing; see the grid derivation in
+       * ./imagery.ts. Two bugs came from getting them wrong:
+       *
+       *   - `250m` hard-coded here meant night lights, published only at `500m`, asked
+       *     for a matrix set it does not have and got HTTP 400 on every tile. The
+       *     symptom is a layer that appears to do nothing at all.
+       *   - the default GeographicTilingScheme (2 x 1 at level zero, doubling) does not
+       *     match GIBS's grid, so tiles covering 144 degrees were painted into
+       *     rectangles covering 90, squeezing the imagery into a corner of the Earth.
+       *     Anchoring level zero on matrix 3 (10 x 5, exactly one globe) makes Cesium's
+       *     doubling and GIBS's agree, and tileMatrixLabels carries the +3 offset.
+       */
+      const provider = new Cesium.WebMapTileServiceImageryProvider({
+        url: gibsTileUrl(layer, imageryDateFor(new Date())),
+        layer: layer.product,
+        style: "default",
+        format: layer.format === "jpg" ? "image/jpeg" : "image/png",
+        tileMatrixSetID: layer.tileMatrixSet,
+        tileMatrixLabels: gibsTileMatrixLabels(layer),
+        maximumLevel: gibsMaximumLevel(layer),
+        // Told explicitly: Cesium assumes 256 and cannot discover the real size.
+        tileWidth: GIBS_TILE_SIZE,
+        tileHeight: GIBS_TILE_SIZE,
+        tilingScheme: new Cesium.GeographicTilingScheme({
+          numberOfLevelZeroTilesX: GIBS_LEVEL_ZERO_TILES_X,
+          numberOfLevelZeroTilesY: GIBS_LEVEL_ZERO_TILES_Y,
+        }),
+        // Credit travels with the layer, so turning it on and crediting it cannot come
+        // apart in a later edit.
+        credit: new Cesium.Credit(GIBS_ATTRIBUTION),
+      });
+      overlayRef.current = layers.addImageryProvider(provider);
+    }
+
+    viewer.scene.requestRender();
+  }, [globeReady, imageryLayerId]);
 
   return (
     <>
       <link rel="stylesheet" href={CESIUM_WIDGET_CSS_HREF} />
       <div className="globe-root">
-        <div ref={containerRef} className="globe-canvas" />
+        {/*
+          role="application" is correct here and almost nowhere else.
+          A WebGL canvas exposes no accessible structure — there is no tree to publish.
+          What it can do is accept keys, and this role is what stops a screen reader
+          intercepting them so the camera controls below actually reach the globe. The
+          app uses it exactly once, for the one element where there is nothing to
+          describe and something to operate.
+        */}
+        <div
+          ref={containerRef}
+          id="globe"
+          className="globe-canvas"
+          role="application"
+          tabIndex={0}
+          aria-label={
+            "Interactive 3-D globe showing satellite positions. " +
+            "Use the arrow keys to rotate, plus and minus to zoom, and Home to reset the view. " +
+            "Satellites are three pixels wide and cannot reliably be selected here: " +
+            "use the search button, or Control-K, to choose one by name."
+          }
+          onKeyDown={handleGlobeKeyDown}
+        />
 
         {catalogState.status === "loading" ? (
           <div className="globe-overlay" role="status" aria-live="polite">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSceneHtml } from "./scene-html.js";
+import { buildSceneHtml } from "./scene-html";
 
 /**
  * The scene is a generated string, which makes it easy to get subtly wrong in ways

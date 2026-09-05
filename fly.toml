@@ -1,0 +1,60 @@
+# The OrbitWatch API on Fly.io.
+#
+# WHY SYDNEY
+# The database is Supabase in ap-southeast-2. Every request this service serves makes
+# at least one query, so the API sits in the same city rather than paying a
+# trans-Pacific round trip on each one.
+#
+# NOTHING SECRET LIVES IN THIS FILE.
+# DATABASE_URL and the Upstash token are set with `fly secrets set`, which stores them
+# encrypted and injects them at run time. The values below are configuration, not
+# credentials, and are in the file precisely so the deployment is self-describing.
+
+app = "orbitwatch-api"
+primary_region = "syd"
+
+[build]
+  # Context is the repo root; the Dockerfile lives with the service it builds.
+  dockerfile = "apps/api/Dockerfile"
+
+[env]
+  PORT = "3333"
+  # Fly routes to the container over its private network, so binding loopback would be
+  # unreachable. This is the default in config.ts, stated here because it matters.
+  HOST = "0.0.0.0"
+  NODE_ENV = "production"
+  # The browser origins allowed to read this API. Without an entry here the server
+  # sends no Access-Control-Allow-Origin at all and every fetch from the web app is
+  # blocked — see `origin: false` in apps/api/src/server.ts.
+  CORS_ORIGINS = "https://orbitwatch.mohijitsingh.com"
+
+[http_service]
+  internal_port = 3333
+  force_https = true
+  # Sleeps when idle and wakes on the next request. A personal deployment serves
+  # nothing most of the day, and this is the difference between a few dollars a month
+  # and almost nothing. The cost is a cold start on the first request after a quiet
+  # period; suspend resumes a snapshot rather than booting, so it is a pause, not a
+  # full start.
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    # /health/live only: it reports that the process is answering, and says nothing
+    # about the database. /health would fail this check during a Supabase blip and Fly
+    # would replace a machine that is working correctly and reporting degradation
+    # honestly, which is the opposite of what should happen.
+    path = "/health/live"
+    method = "GET"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+
+[[vm]]
+  # The first thing to raise if the process is OOM-killed. /catalog/elements builds a
+  # ~7 MB response in memory and compresses it; NODE_OPTIONS in the Dockerfile caps the
+  # heap below this so V8 collects rather than the kernel killing the process.
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

@@ -57,8 +57,10 @@ export {
   CIVIL_TWILIGHT_DEGREES,
   classifyShadow,
   illuminationAt,
+  nextDarkness,
   observerLighting,
   sunAltitudeDegrees,
+  type DarknessWindow,
   type ObserverLighting,
 } from "./illumination.js";
 
@@ -78,11 +80,14 @@ export {
 export {
   classifyVisibility,
   describeVisibility,
+  passSkyTrack,
   predictPasses,
   NO_PASSES,
   type PassPoint,
   type PassPredictionOptions,
   type SatellitePass,
+  type SkyTrackOptions,
+  type SkyTrackPoint,
   type VisibilityClassification,
 } from "./passes.js";
 
@@ -96,3 +101,19 @@ export {
   type ElementSelection,
   type PropagationConfidence,
 } from "./accuracy.js";
+
+export {
+  ANGLE_TOLERANCE_DEGREES,
+  DISTANCE_TOLERANCE_KM,
+  TIME_TOLERANCE_MS,
+  compareAgreement,
+  computeAgreement,
+  runAgreement,
+  type AgreementCase,
+  type AgreementDeviation,
+  type AgreementObserver,
+  type AgreementPass,
+  type AgreementReport,
+  type AgreementResult,
+  type AgreementSample,
+} from "./agreement.js";

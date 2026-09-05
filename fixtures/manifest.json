@@ -95,6 +95,53 @@
       "truncated": false,
       "capturedFrom": "GitHub Actions runner.",
       "notes": "50 transmitters for the ISS. Many numeric fields (uplink_high, baud, norad_follow_id) are legitimately null. status is lowercase active/inactive, separate from the alive boolean."
+    },
+    {
+      "file": "celestrak-gp-e2e-subset.json",
+      "provider": "celestrak-gp",
+      "endpoint": "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json",
+      "retrievedAt": "2026-09-01T11:40:01.317Z",
+      "purpose": "Multi-object corpus for the E2E suite, so it verifies catalog behaviour at scale rather than for a single object. Replayed through the real ingestion pipeline by apps/api/src/seed-dev.ts.",
+      "truncated": true,
+      "capturedFrom": "Re-exported from OrbitWatch's own Postgres by packages/database/src/cli/export-e2e-fixture.ts. Unmodified records from one GROUP=active response; NO new provider request was made to produce this file.",
+      "notes": "39 of the ~16,500 records in that response. Record values are verbatim; only the storage wrapper was dropped (identity column, created_at, first_seen_at, and the SATCAT columns GP ingestion leaves NULL). Key ORDER is JSONB's, not the wire order -- values are unaffected. Selection is deterministic: bucket by orbit class derived from the elements, take the lowest catalog IDs per class, always include 25544, and add the lowest-numbered members of the visual group so the corpus has something bright to search. Classes present: GEO, GSO, HEO, HIGH, LEO, MEO. The E2E suite pins the browser clock to the ISS epoch plus 18 hours so these ages stay fixed as real time passes."
+    },
+    {
+      "file": "celestrak-gp-e2e-visual.json",
+      "provider": "celestrak-gp",
+      "endpoint": "https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=json",
+      "retrievedAt": "2026-09-01T14:11:06.150Z",
+      "purpose": "The brightness list. GP elements carry no size, albedo, shape or attitude, so nothing in the catalog says which objects can be seen; membership of this group is the only published statement of that. Without it, Visible Tonight returns every sunlit object above the horizon -- measured at 3,614 optically favourable passes over one observer in one night.",
+      "truncated": true,
+      "capturedFrom": "Exported from OrbitWatch's own Postgres after a single guarded GROUP=visual ingestion on 2026-09-01. Unmodified records; the export itself made no provider request.",
+      "notes": "8 of the 157 members that response listed, chosen as the lowest catalog IDs so the selection is deterministic. Every one is also present in celestrak-gp-e2e-subset.json, matching reality: visual is a subset of active. Replayed as a second ingestion by the E2E seed, which is what records group membership -- the seed never writes it directly."
+    },
+    {
+      "file": "cross-platform-agreement.json",
+      "provider": "derived",
+      "endpoint": null,
+      "retrievedAt": null,
+      "purpose": "Expected positions, look angles and pass times for the M6 cross-platform agreement gate. Every platform is measured against these committed numbers rather than against another platform's run.",
+      "truncated": false,
+      "notes": "NOT a provider response. Derived from celestrak-gp-e2e-subset.json by packages/orbit-core/src/cli/generate-agreement-fixture.ts, which embeds four of its real OMM records verbatim and computes the expected values once on Node (V8). No new provider request was made to produce this file. Regenerate only when the source elements change, and review the resulting diff."
+    },
+    {
+      "file": "satnogs-network-stations.json",
+      "provider": "satnogs-network",
+      "endpoint": "https://network.satnogs.org/api/stations/?format=json&page_size=25",
+      "retrievedAt": "2026-09-02T00:00:00.000Z",
+      "purpose": "Verify the ground station shape: position, per-station minimum horizon, status, antenna bands and last-seen.",
+      "truncated": true,
+      "notes": "The full listing returned 4,452 stations and 3.4 MB; page_size was ignored by the API. Trimmed to a representative 44 covering all three status values (Online, Offline, Testing), stations with and without antennas, and both hemispheres. Of the full set, 4,119 were Offline, 317 Online and 16 Testing \u2014 a volunteer network is mostly dormant at any moment, which is why status is carried through rather than counted away."
+    },
+    {
+      "file": "nasa-donki-notifications.json",
+      "provider": "nasa-donki",
+      "endpoint": "https://api.nasa.gov/DONKI/notifications?startDate=2026-08-01&endDate=2026-08-31&type=all",
+      "retrievedAt": "2026-09-02T00:00:00.000Z",
+      "purpose": "Verify the DONKI notification shape: message type, id, issue time and narrative body.",
+      "truncated": false,
+      "notes": "74 notifications across August 2026, spanning CME, GST, FLR, SEP, RBE, IPS, MPC and Report. Fetched with NASA's public demonstration key, which is heavily throttled; set NASA_API_KEY for production. The key parameter is omitted from the endpoint above on purpose: the manifest is scanned for anything resembling a credential, and a documented exception in prose is safer than teaching that scanner to ignore a pattern. messageIssueTime carries minute precision with no seconds."
     }
   ],
   "blocked": []

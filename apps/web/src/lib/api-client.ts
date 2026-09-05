@@ -1,7 +1,19 @@
 import {
+  catalogGroupResponseSchema,
+  radioTransmittersResponseSchema,
+  groundStationsResponseSchema,
+  launchesResponseSchema,
+  solarEventsResponseSchema,
+  spaceWeatherResponseSchema,
   elementsResponseSchema,
   satelliteListResponseSchema,
+  type CatalogGroupResponse,
   type ElementsResponse,
+  type RadioTransmittersResponse,
+  type GroundStationsResponse,
+  type LaunchesResponse,
+  type SolarEventsResponse,
+  type SpaceWeatherResponse,
   type SatelliteListResponse,
 } from "@orbitwatch/contracts";
 
@@ -27,6 +39,19 @@ function baseUrl(): string {
  * the main thread while Cesium is starting up. Everything else here is small enough
  * that a normal fetch is the simpler choice.
  */
+/**
+ * Membership of a provider-published group, e.g. CelesTrak's `visual`.
+ *
+ * Catalog IDs only; the elements themselves already arrived with the catalog. A 404
+ * means the group has never been ingested, which is a different statement from an
+ * empty group and is surfaced as such rather than as "nothing is visible".
+ */
+export async function fetchCatalogGroup(group: string): Promise<CatalogGroupResponse> {
+  return catalogGroupResponseSchema.parse(
+    await getJson(`/catalog/groups/${encodeURIComponent(group)}`),
+  );
+}
+
 export function catalogElementsUrl(): string {
   return new URL("/catalog/elements", baseUrl()).toString();
 }
@@ -77,5 +102,63 @@ export async function fetchElements(
       `/satellites/${encodeURIComponent(catalogId)}/elements`,
       at ? { at: at.toISOString() } : undefined,
     ),
+  );
+}
+
+/**
+ * What an object transmits, from the SatNOGS DB.
+ *
+ * A separate request rather than part of the element response: radio comes from a
+ * different provider with a different refresh cadence and a different licence, and
+ * folding it into the elements would imply one source vouches for the other.
+ */
+export async function fetchTransmitters(
+  catalogId: string,
+): Promise<RadioTransmittersResponse> {
+  return radioTransmittersResponseSchema.parse(
+    await getJson(`/satellites/${encodeURIComponent(catalogId)}/transmitters`),
+  );
+}
+
+/**
+ * Current space weather.
+ *
+ * Global rather than per-satellite: it describes the environment every low-orbit object
+ * is flying through, and it is why an ageing element set degrades faster during a storm.
+ */
+export async function fetchSpaceWeather(): Promise<SpaceWeatherResponse> {
+  return spaceWeatherResponseSchema.parse(await getJson("/space-weather"));
+}
+
+/**
+ * The next launches.
+ *
+ * Served with each launch's time precision, which the caller is obliged to consult:
+ * a T-0 known only to the month arrives as a full timestamp and must not be rendered
+ * as one.
+ */
+export async function fetchUpcomingLaunches(limit = 6): Promise<LaunchesResponse> {
+  return launchesResponseSchema.parse(
+    await getJson("/launches/upcoming", { limit: String(limit) }),
+  );
+}
+
+/**
+ * Ground stations that can receive passes.
+ *
+ * Defaults to the online ones. The response also carries the full breakdown by status,
+ * because roughly nine in ten stations are offline at any moment and a bare list would
+ * overstate coverage tenfold.
+ */
+export async function fetchStations(limit = 200): Promise<GroundStationsResponse> {
+  return groundStationsResponseSchema.parse(
+    await getJson("/stations", { limit: String(limit) }),
+  );
+}
+
+/** Recent solar and geomagnetic events — what happened, not what conditions are. */
+export async function fetchSolarEvents(limit = 8): Promise<SolarEventsResponse> {
+  return solarEventsResponseSchema.parse(
+    await getJson("/solar-events", { limit: String(limit) }),
   );
 }

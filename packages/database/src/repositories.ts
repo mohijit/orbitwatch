@@ -219,10 +219,329 @@ export interface IngestionLeaseRepository {
   release(resourceKey: string, holder: string): Promise<void>;
 }
 
+/**
+ * Membership of a provider-published group, e.g. CelesTrak's `visual`.
+ *
+ * `lastSeenAt` is the useful half: membership changes, and an object that has dropped
+ * out of a group must stop being presented as one of its members.
+ */
+export interface SatelliteGroupMembership {
+  readonly catalogId: CatalogId;
+  readonly provider: string;
+  readonly groupName: string;
+  readonly firstSeenAt: Date;
+  readonly lastSeenAt: Date;
+}
+
+export interface SatelliteGroupRepository {
+  /**
+   * Record the full membership of a group as of one ingestion run.
+   *
+   * Takes the WHOLE list, not additions, because that is what the provider publishes
+   * and it is the only way to notice a departure. `seenAt` is the run's fetch time
+   * rather than now(), so a replayed or delayed run does not claim fresher knowledge
+   * than it has.
+   */
+  record(
+    provider: string,
+    groupName: string,
+    catalogIds: readonly CatalogId[],
+    seenAt: Date,
+  ): Promise<{ readonly added: number; readonly refreshed: number }>;
+
+  /**
+   * Members of a group, optionally only those still listed as of `since`.
+   *
+   * The filter is how a caller avoids offering an object that has silently left the
+   * group: pass the start of the most recent successful run for that resource.
+   */
+  members(
+    provider: string,
+    groupName: string,
+    options?: { readonly seenSince?: Date },
+  ): Promise<readonly SatelliteGroupMembership[]>;
+}
+
 /** Everything the application needs from storage, in one place. */
+/**
+ * A radio transmitter, as the provider publishes it.
+ *
+ * Frequencies are in HERTZ, verbatim from the provider. No unit is converted on the way
+ * in: a factor of a thousand is the classic silent error in radio data, and the safest
+ * place for it not to happen is nowhere.
+ */
+export interface RadioTransmitter {
+  readonly uuid: string;
+  readonly provider: string;
+  /** Undefined for SatNOGS entries with no NORAD id yet — pre-launch, mostly. */
+  readonly catalogId: string | undefined;
+  readonly satId: string | undefined;
+  readonly description: string;
+  readonly type: string | undefined;
+  readonly status: string;
+  /** The provider's own claim that this transmitter works. Distinct from `status`. */
+  readonly alive: boolean;
+  readonly uplinkLowHz: number | undefined;
+  readonly uplinkHighHz: number | undefined;
+  readonly downlinkLowHz: number | undefined;
+  readonly downlinkHighHz: number | undefined;
+  readonly mode: string | undefined;
+  readonly uplinkMode: string | undefined;
+  readonly baud: number | undefined;
+  readonly inverted: boolean | undefined;
+  readonly service: string | undefined;
+  readonly citation: string | undefined;
+  /** When the PROVIDER last changed it. Not when we fetched it. */
+  readonly updatedAt: Date | undefined;
+  readonly retrievedAt: Date;
+  readonly firstSeenAt: Date;
+  readonly lastSeenAt: Date;
+}
+
+/** What an ingestion supplies; the seen-at timestamps are the store's business. */
+export type RadioTransmitterInput = Omit<RadioTransmitter, "firstSeenAt" | "lastSeenAt">;
+
+export interface RadioRepository {
+  /**
+   * Insert or update transmitters, keyed on the provider's UUID.
+   *
+   * Upsert rather than replace-all: SatNOGS is queried per satellite as well as in
+   * bulk, and a per-satellite refresh must not delete every other object's
+   * transmitters. Returns inserted/updated counts so an ingestion run can report what
+   * actually changed rather than what it sent.
+   */
+  upsertMany(
+    transmitters: readonly RadioTransmitterInput[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /**
+   * Transmitters for one object.
+   *
+   * `includeDead` defaults to false because a ground station wants what is working
+   * now; the dead entries are history, not the answer. They remain retrievable rather
+   * than deleted, since "this used to transmit on 145.8" is a real question.
+   */
+  forSatellite(
+    catalogId: CatalogId,
+    options?: { readonly includeDead?: boolean },
+  ): Promise<readonly RadioTransmitter[]>;
+
+  /** How many transmitters are stored, for /providers/status and diagnostics. */
+  count(): Promise<number>;
+}
+
+/** Which NOAA product an observation came from. */
+export type SpaceWeatherSource = "planetary-k-index" | "solar-wind" | "scales";
+
+/**
+ * One space weather observation.
+ *
+ * Every measurement is optional because the three NOAA products report different
+ * quantities; a missing value means "this source does not publish that", which is a
+ * fact rather than a gap.
+ */
+export interface SpaceWeatherObservation {
+  readonly source: SpaceWeatherSource;
+  /** The instant the observation DESCRIBES, not when it was fetched. */
+  readonly observedAt: Date;
+  readonly kp: number | undefined;
+  readonly aRunning: number | undefined;
+  readonly solarWindSpeedKmS: number | undefined;
+  readonly solarWindDensity: number | undefined;
+  readonly bzNt: number | undefined;
+  readonly radioBlackoutScale: number | undefined;
+  readonly solarRadiationScale: number | undefined;
+  readonly geomagneticScale: number | undefined;
+  readonly retrievedAt: Date;
+}
+
+export interface SpaceWeatherRepository {
+  /**
+   * Insert or refresh observations, keyed on (source, observedAt).
+   *
+   * Upsert rather than append: NOAA republishes overlapping windows on every poll, and
+   * the same instant arriving twice is the normal case, not a conflict.
+   */
+  record(
+    observations: readonly SpaceWeatherObservation[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /** The most recent observation from a source, or undefined if none is stored. */
+  latest(source: SpaceWeatherSource): Promise<SpaceWeatherObservation | undefined>;
+
+  /**
+   * Observations from a source at or after `since`, oldest first.
+   *
+   * Ascending because the only consumer plots them left to right, and reversing a
+   * result set in the client is work the database has already done.
+   */
+  since(
+    source: SpaceWeatherSource,
+    since: Date,
+  ): Promise<readonly SpaceWeatherObservation[]>;
+}
+
+/**
+ * A scheduled launch.
+ *
+ * `netPrecision` travels with `net` deliberately. Launch Library publishes a full ISO
+ * timestamp even for a launch known only to the month, so the time alone is not a
+ * usable fact — anything rendering it has to know how much of it to believe.
+ */
+export interface LaunchRecord {
+  readonly id: string;
+  readonly provider: string;
+  readonly name: string;
+  readonly net: Date;
+  readonly netPrecision: string | undefined;
+  readonly windowStart: Date | undefined;
+  readonly windowEnd: Date | undefined;
+  readonly statusName: string | undefined;
+  readonly statusAbbrev: string | undefined;
+  readonly serviceProvider: string | undefined;
+  readonly rocketName: string | undefined;
+  readonly missionName: string | undefined;
+  readonly missionOrbit: string | undefined;
+  readonly padName: string | undefined;
+  readonly padLocation: string | undefined;
+  readonly padLatitude: number | undefined;
+  readonly padLongitude: number | undefined;
+  readonly webcastLive: boolean;
+  readonly retrievedAt: Date;
+}
+
+export interface LaunchRepository {
+  /** Insert or update, keyed on the provider's id. A slipped NET is an update. */
+  upsertMany(
+    launches: readonly LaunchRecord[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /**
+   * Launches at or after `from`, soonest first.
+   *
+   * Filtered by time rather than by status: a launch that has slipped into the past
+   * without its status being updated is stale information, and showing it would be
+   * worse than showing nothing.
+   */
+  upcoming(from: Date, limit: number): Promise<readonly LaunchRecord[]>;
+}
+
+/**
+ * A ground station that can receive satellite passes.
+ *
+ * `minHorizonDegrees` is the station's OWN lowest observable elevation, not a global
+ * default: a site in a valley may not see below 40 degrees, so "above 10 degrees" is
+ * not the same question for every receiver.
+ */
+export interface GroundStationRecord {
+  readonly id: string;
+  readonly provider: string;
+  readonly name: string;
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly altitudeM: number;
+  readonly minHorizonDegrees: number;
+  /** 'Online' | 'Offline' | 'Testing', as the provider publishes it. */
+  readonly status: string;
+  readonly bands: readonly string[];
+  readonly observations: number;
+  readonly lastSeen: Date | undefined;
+  readonly retrievedAt: Date;
+}
+
+export interface GroundStationRepository {
+  upsertMany(
+    stations: readonly GroundStationRecord[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /**
+   * Stations, newest-observed first, optionally restricted to a status.
+   *
+   * Everything is stored, including the offline majority, because a station that is
+   * dark today receives again tomorrow. Filtering is the reader's decision.
+   */
+  list(options?: {
+    readonly status?: string;
+    readonly limit?: number;
+  }): Promise<readonly GroundStationRecord[]>;
+
+  /** Counts by status, so a caller can say "317 of 4,452 online" honestly. */
+  countByStatus(): Promise<Readonly<Record<string, number>>>;
+}
+
+/**
+ * A discrete solar or geomagnetic event.
+ *
+ * Distinct from `SpaceWeatherObservation`, which is a current level. This is a thing
+ * that happened, with the narrative NASA published about it.
+ */
+export interface SolarEventRecord {
+  readonly id: string;
+  readonly provider: string;
+  readonly type: string;
+  readonly knownType: boolean;
+  readonly issuedAt: Date;
+  readonly url: string;
+  readonly summary: string;
+  readonly body: string;
+  readonly retrievedAt: Date;
+}
+
+export interface SolarEventRepository {
+  upsertMany(
+    events: readonly SolarEventRecord[],
+  ): Promise<{ readonly inserted: number; readonly updated: number }>;
+
+  /** Most recent events, newest first. */
+  recent(options?: {
+    readonly since?: Date;
+    readonly types?: readonly string[];
+    readonly limit?: number;
+  }): Promise<readonly SolarEventRecord[]>;
+}
+
+/**
+ * A watchlist parked for collection by another device.
+ *
+ * `codeHash`, never the code. The code is a bearer secret held only by the devices
+ * sharing it; the server takes what a client sends, hashes it, and looks up by that —
+ * so this record cannot yield a working code even to someone holding the whole table.
+ */
+export interface WatchlistSyncRecord {
+  readonly codeHash: string;
+  readonly catalogIds: readonly string[];
+  readonly updatedAt: Date;
+}
+
+export interface WatchlistSyncRepository {
+  /** Create or replace the list under this hash. Returns when it was stored. */
+  put(codeHash: string, catalogIds: readonly string[]): Promise<{ readonly updatedAt: Date }>;
+
+  /** The list under this hash, or undefined. Never reveals whether the hash is close. */
+  get(codeHash: string): Promise<WatchlistSyncRecord | undefined>;
+
+  /** Forget one, at the user's request. */
+  remove(codeHash: string): Promise<boolean>;
+
+  /**
+   * Delete pairings untouched since `before`. Returns how many went.
+   *
+   * Abandoned data is a liability rather than an asset: nobody benefits from a list of
+   * satellite numbers left behind by a device that stopped syncing two years ago.
+   */
+  purgeOlderThan(before: Date): Promise<number>;
+}
+
 export interface Database {
   readonly satellites: SatelliteRepository;
   readonly elements: OrbitalElementRepository;
+  readonly groups: SatelliteGroupRepository;
+  readonly radio: RadioRepository;
+  readonly spaceWeather: SpaceWeatherRepository;
+  readonly launches: LaunchRepository;
+  readonly stations: GroundStationRepository;
+  readonly solarEvents: SolarEventRepository;
+  readonly watchlistSync: WatchlistSyncRepository;
   readonly providerRuns: ProviderRunRepository;
   readonly leases: IngestionLeaseRepository;
   /** Run migrations. Safe to call repeatedly; already-applied ones are skipped. */
