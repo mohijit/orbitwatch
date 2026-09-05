@@ -11,7 +11,7 @@ and name the benchmark that produced them.
 | [0003](0003-mobile-renderer.md) | Mobile 3D globe: bundled CesiumJS in a WebView, native UI around it | Accepted, device gate outstanding |
 | [0004](0004-orbital-data-model.md) | OMM-first elements, catalog IDs as strings, branded units | Accepted |
 | [0005](0005-provider-access-and-rate-policy.md) | Server-side provider access behind a persistent, leased fetch guard | Accepted |
-| [0006](0006-mobile-web-performance.md) | How much of the catalog a phone browser draws | Proposed, awaiting device measurement |
+| [0006](0006-mobile-web-performance.md) | How much of the catalog a phone browser draws | Accepted (iPhone 14, 60 fps at 16,655 objects) |
 
 ## Reproducing the benchmarks
 
