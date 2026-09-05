@@ -20,6 +20,10 @@ RUN corepack enable
 WORKDIR /repo
 
 FROM base AS build
+# pnpm asks for confirmation before purging node_modules, and a Docker build has no TTY
+# to answer with, so the prune below aborts with ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY.
+# CI=true is pnpm's own documented answer to this, and it is true here.
+ENV CI=true
 COPY . .
 # `...` means "and everything it depends on". The web and mobile apps are never
 # installed — no Cesium, no Expo — but their package.json files are still present,
