@@ -57,6 +57,7 @@ function report(result: IngestionResult): void {
     `  inserted  : ${result.inserted}`,
     `  unchanged : ${result.unchanged}`,
     `  rejected  : ${result.rejected}`,
+    `  pruned    : ${result.pruned}`,
     `  duration  : ${result.durationMs} ms`,
   ];
   if (result.skippedReason !== undefined) lines.push(`  reason    : ${result.skippedReason}`);

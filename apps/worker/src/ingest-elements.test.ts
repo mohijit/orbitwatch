@@ -286,7 +286,9 @@ describe("orbital element ingestion", () => {
   });
 
   it("appends new epochs as history rather than overwriting", async () => {
-    const database = new InMemoryDatabase();
+    // Clocked beside the epochs, so the retention policy run after each ingest sees
+    // both as recent. This test is about appending, not pruning.
+    const database = new InMemoryDatabase({ now: () => new Date("2026-08-31T13:00:00Z") });
 
     await ingestOrbitalElements({
       database,
@@ -392,12 +394,7 @@ describe("orbital element ingestion", () => {
     const database = new InMemoryDatabase();
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response("GP data has not updated since your last successful download", {
-            status: 403,
-          }),
-      ),
+      vi.fn(async () => new Response("Access denied: too many requests", { status: 403 })),
     );
 
     const result = await ingestOrbitalElements({
@@ -408,6 +405,66 @@ describe("orbital element ingestion", () => {
 
     expect(result.status).toBe("failed");
     expect(result.errorSummary).toMatch(/PROVIDER REFUSED/);
+  });
+
+  it("skips, rather than fails, when the provider's 403 means nothing is new", async () => {
+    // CelesTrak's exact wording, from the run that failed on 2026-10-22. Upstream was
+    // quiet; that is not something a human needs to be paged for.
+    const database = new InMemoryDatabase();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            "GP data has not updated since your last successful download of " +
+              "GROUP=active at 2026-10-21 21:36:28 UTC. Data is updated once every 2 hours.",
+            { status: 403 },
+          ),
+      ),
+    );
+
+    const result = await ingestOrbitalElements({
+      database,
+      http: new GuardedHttpClient(guard),
+      query: { kind: "GROUP", value: "active" },
+    });
+
+    expect(result.status).toBe("skipped");
+    expect(result.skippedReason).toMatch(/no new data/);
+    // The request did reach CelesTrak, so the run must still count against the durable
+    // rate guard. A "skipped" row would not, and the next run could ask again too soon.
+    const run = await database.providerRuns.latestAttempt("celestrak-gp", "group-active");
+    expect(run?.status).toBe("failed");
+    expect(run?.errorSummary).toMatch(/no new data/);
+  });
+
+  it("prunes element history after storing, and reports the count", async () => {
+    const database = new InMemoryDatabase();
+    const prune = vi.spyOn(database.elements, "prune");
+
+    const result = await ingestOrbitalElements({
+      database,
+      http: clientReturning([ISS_GP]),
+      query: { kind: "GROUP", value: "active" },
+    });
+
+    expect(result.status).toBe("success");
+    expect(prune).toHaveBeenCalledWith({ fullResolutionDays: 7, dailyResolutionDays: 14 });
+    expect(result.pruned).toBe(0);
+  });
+
+  it("still succeeds when pruning fails, because the new data is already stored", async () => {
+    const database = new InMemoryDatabase();
+    vi.spyOn(database.elements, "prune").mockRejectedValue(new Error("disk full"));
+
+    const result = await ingestOrbitalElements({
+      database,
+      http: clientReturning([ISS_GP]),
+      query: { kind: "GROUP", value: "active" },
+    });
+
+    expect(result.status).toBe("success");
+    expect(database.elementCount).toBe(1);
   });
 
   it("skips a repeat download within the provider's update cycle", async () => {
