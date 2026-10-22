@@ -47,6 +47,8 @@ export interface IngestionResult {
   readonly inserted: number;
   readonly unchanged: number;
   readonly rejected: number;
+  /** Element sets deleted by the retention policy after this run. */
+  readonly pruned: number;
   readonly skippedReason: string | undefined;
   readonly errorSummary: string | undefined;
   readonly durationMs: number;
@@ -81,6 +83,16 @@ export const NULL_LOGGER: IngestionLogger = {
  * but not by so much that a crashed worker blocks the next scheduled run.
  */
 export const DEFAULT_LEASE_TTL_SECONDS = 600;
+
+/**
+ * Element history kept after each run: every set for a week, then the last set of each
+ * day for a further week. The timeline scrubs ±48 h, so this comfortably covers replay.
+ *
+ * Sized against the real catalog: ~17,000 objects at ~2 new sets each per day keeps
+ * ~310,000 rows (~250 MB). The repository default of a year of daily sets would hold
+ * ~930,000 and keep growing, which is more than the database has room for.
+ */
+export const ELEMENT_RETENTION = { fullResolutionDays: 7, dailyResolutionDays: 14 } as const;
 
 /** How many rejected records to keep in the error summary before truncating. */
 const MAX_REPORTED_REJECTIONS = 5;
@@ -276,6 +288,8 @@ export async function ingestOrbitalElements(
       rejected: totalRejected,
     });
 
+    const pruned = await pruneHistory(database, logger);
+
     return {
       runId,
       status,
@@ -283,6 +297,7 @@ export async function ingestOrbitalElements(
       inserted: stored.inserted,
       unchanged: stored.unchanged,
       rejected: totalRejected,
+      pruned,
       skippedReason: undefined,
       errorSummary:
         totalRejected > 0
@@ -291,6 +306,21 @@ export async function ingestOrbitalElements(
       durationMs: now().getTime() - startedAt,
     };
   } catch (error) {
+    if (isNoNewDataRefusal(error)) {
+      // CelesTrak answers 403 when its data has not changed since this IP last
+      // downloaded it. Nothing was refused that we wanted: there is nothing newer to
+      // have. Failing the job paged a human for an upstream feed that was merely quiet.
+      // Any other 403/429 still falls through and fails loudly.
+      //
+      // The run row is still "failed", not "skipped": the request reached CelesTrak,
+      // and latestAttempt ignores skipped rows, so recording a skip would let the next
+      // scheduled run ask again inside the interval. Only the job's result is a skip.
+      const reason = `${provider} has no new data since the last download (HTTP 403)`;
+      logger.info("Ingestion skipped: provider has no new data", { provider, resource });
+      await database.providerRuns.finish(runId, { status: "failed", errorSummary: reason });
+      return { ...skipped(reason, startedAt, now), runId };
+    }
+
     const summary = describeError(error);
     logger.error("Ingestion failed", { provider, resource, error: summary });
 
@@ -309,6 +339,7 @@ export async function ingestOrbitalElements(
       inserted: 0,
       unchanged: 0,
       rejected: 0,
+      pruned: 0,
       skippedReason: undefined,
       errorSummary: summary,
       durationMs: now().getTime() - startedAt,
@@ -448,6 +479,7 @@ function skipped(
     inserted: 0,
     unchanged: 0,
     rejected: 0,
+    pruned: 0,
     skippedReason: reason,
     errorSummary: undefined,
     durationMs: now().getTime() - startedAt,
@@ -469,6 +501,35 @@ function describeError(error: unknown): string {
 
 function isProviderRefused(error: unknown): error is ProviderRefusedError {
   return error instanceof Error && error.name === "ProviderRefusedError";
+}
+
+/** CelesTrak's wording when a 403 means "unchanged", not "too often". */
+const NO_NEW_DATA_PATTERN = /has not updated since your last successful download/i;
+
+function isNoNewDataRefusal(error: unknown): boolean {
+  return (
+    isProviderRefused(error) &&
+    error.httpStatus === 403 &&
+    NO_NEW_DATA_PATTERN.test(error.bodyExcerpt)
+  );
+}
+
+/**
+ * Apply the retention policy. A failure here is logged, not raised: the elements are
+ * already stored and the run already recorded, and an oversized history table is not a
+ * reason to report fresh data as a failed ingest.
+ */
+async function pruneHistory(database: Database, logger: IngestionLogger): Promise<number> {
+  try {
+    const pruned = await database.elements.prune(ELEMENT_RETENTION);
+    logger.info("Pruned element history", { pruned, ...ELEMENT_RETENTION });
+    return pruned;
+  } catch (error) {
+    logger.warn("Pruning element history failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 0;
+  }
 }
 
 export class IngestionError extends Error {

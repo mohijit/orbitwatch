@@ -547,15 +547,26 @@ function createElementRepository(sql: Sql): OrbitalElementRepository {
           ? sql`TRUE`
           : conditions.reduce((left, right) => sql`${left} AND ${right}`);
 
+      // One index probe per satellite on (catalog_id, epoch DESC), not DISTINCT ON over
+      // the whole history. DISTINCT ON sorted every stored element set to keep one per
+      // object, so its cost grew with history rather than with the catalog; at 1.6M rows
+      // the sort spilled to disk, ran Supabase out of space and the endpoint returned
+      // 500. Ordering comes from the satellites primary key, so nothing is sorted.
       const rows = await sql`
-        SELECT DISTINCT ON (e.catalog_id)
+        SELECT
           e.id, e.catalog_id, e.provider, e.format, e.epoch, e.retrieved_at, e.omm,
           e.tle_line_1, e.tle_line_2, e.mean_motion, e.eccentricity, e.inclination,
           e.bstar
-        FROM orbital_elements e
-        JOIN satellites s ON s.catalog_id = e.catalog_id
+        FROM satellites s
+        CROSS JOIN LATERAL (
+          SELECT ${sql.unsafe(ELEMENT_COLUMNS)}
+          FROM orbital_elements
+          WHERE catalog_id = s.catalog_id
+          ORDER BY epoch DESC
+          LIMIT 1
+        ) e
         WHERE ${where}
-        ORDER BY e.catalog_id, e.epoch DESC
+        ORDER BY s.catalog_id
       `;
       return rows.map((row) => mapElement(row as Record<string, unknown>));
     },
