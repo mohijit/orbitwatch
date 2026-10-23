@@ -12,6 +12,7 @@ and name the benchmark that produced them.
 | [0004](0004-orbital-data-model.md) | OMM-first elements, catalog IDs as strings, branded units | Accepted |
 | [0005](0005-provider-access-and-rate-policy.md) | Server-side provider access behind a persistent, leased fetch guard | Accepted |
 | [0006](0006-mobile-web-performance.md) | How much of the catalog a phone browser draws | Accepted (iPhone 14, 60 fps at 16,655 objects) |
+| [0007](0007-device-tilt-on-android.md) | Sky finder tilt comes from gravity, never the platform tilt angle | Accepted (measured on an Android device) |
 
 ## Reproducing the benchmarks
 
@@ -29,4 +30,6 @@ headless Chromium, where rasterisation falls back to SwiftShader.
 Numbers in the ADRs were taken on the development machine (Node 24.16.0, win32/x64)
 and are medians of repeated runs. They are used for relative comparisons between
 strategies, which is what the decisions turn on; absolute values will differ on other
-hardware, and mobile device figures are explicitly still outstanding (ADR 0003).
+hardware, and mobile device figures are explicitly still outstanding (ADR 0003). ADR 0007 is
+the exception: its numbers were read off a real Android handset, because the fault it
+records cannot be reproduced anywhere else.

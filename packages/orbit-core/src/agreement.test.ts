@@ -29,7 +29,20 @@ const fixture = JSON.parse(
   readFileSync(resolve(repoRoot, "fixtures", "cross-platform-agreement.json"), "utf8"),
 ) as { cases: AgreementCase[]; expected: AgreementResult[] };
 
-describe("cross-platform agreement", () => {
+/**
+ * Vitest defaults to 5 seconds, which is not enough headroom here.
+ *
+ * Each test propagates all 16 cases across their sample times and pass windows. That is
+ * around 2 seconds on an unloaded development machine, and the whole file does it six
+ * times. `pnpm test` runs the workspace packages in parallel, and under that load the
+ * same work has been measured at 3.9 seconds -- inside the budget, but not by much, and
+ * one run crossed it.
+ *
+ * The assertions are unchanged. What is raised is only how long they may take, because
+ * a timeout failure here reads as "the platforms disagree" when it means "the laptop
+ * was busy", and that is the most misleading failure this suite could produce.
+ */
+describe("cross-platform agreement", { timeout: 30_000 }, () => {
   it("covers deep-space and near-earth propagation, and several latitudes", () => {
     // A suite that quietly shrank would still pass every assertion below it, so the
     // shape of the corpus is asserted before its contents.

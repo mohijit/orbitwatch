@@ -128,48 +128,133 @@ export function calibrationFrom(accuracy: number, trueHeading: number): Calibrat
   };
 }
 
-/** expo-sensors' DeviceMotion rotation, in radians, on the W3C convention. */
-export interface DeviceRotation {
-  /** About the Z axis. Unused: it is relative to an arbitrary reference, not to north. */
-  readonly alpha: number;
-  /** Front-to-back tilt. 0 is flat on its back, 90 is upright, 180 is flat on its face. */
-  readonly beta: number;
-  /** Left-to-right tilt. */
-  readonly gamma: number;
+/** Device-frame acceleration including gravity. Units are irrelevant; direction is not. */
+export interface DeviceGravity {
+  /** Across the screen, positive right. */
+  readonly x: number;
+  /** Up the screen, positive toward the top edge. */
+  readonly y: number;
+  /** Out of the screen, positive toward the viewer. */
+  readonly z: number;
 }
 
 /**
- * Turn the platform's two sensor readings into one pointing direction.
+ * Below this the accelerometer is reporting noise rather than a direction.
  *
- * ITS OWN FUNCTION BECAUSE ITS SIGNS ARE THE PART I CANNOT VERIFY HERE
- * The projection in `sight` is checkable arithmetic. This is not: it depends on which
- * way round a particular platform reports a tilt, and there is no way to establish that
- * without holding a phone. So the assumption is written down, isolated and tested
- * against what is written, which makes a correction on real hardware a one-line change
- * to a function with tests around it rather than a hunt through a component.
- *
- * FIRST THING TO CHECK ON A DEVICE: whether `gamma` needs negating. Tilt the phone
- * clockwise; markers should rotate anticlockwise on screen. If they rotate with the
- * phone instead, negate the roll here.
- *
- * Heading comes from expo-location rather than from `alpha`, which is measured from
- * wherever the device happened to be when the sensor started and knows nothing about
- * north — let alone true north.
+ * Deliberately unit-free. expo-sensors reports the Accelerometer in g and DeviceMotion
+ * in metres per second squared, and since the vector is normalised before use, the only
+ * thing this threshold has to do is reject a reading with no length -- free fall, a
+ * sensor that has not produced a sample yet, or the zero this screen starts at.
  */
-export function orientationFrom(trueHeading: number, rotation: DeviceRotation): DeviceOrientation {
-  const beta = rotation.beta / DEG;
-  const gamma = rotation.gamma / DEG;
+const MIN_GRAVITY = 0.1;
+
+/**
+ * Turn the sensor readings into one pointing direction, or admit there is not one.
+ *
+ * TILT COMES FROM GRAVITY, AND ONLY FROM GRAVITY
+ * The obvious implementation reads the platform tilt angle, since the W3C convention
+ * puts its beta at 0 lying flat and 90 upright. iOS reports that. Android does not: it
+ * derives rotation from SensorManager.getOrientation, whose pitch is defined over a
+ * quarter turn either side of level, so past vertical it has no range left and
+ * REFLECTS. Measured on a real device, holding it flat, upright, then tilted back:
+ *
+ *   attitude              beta reported     beta - 90     should be
+ *   flat on its back        0                 -90           -90
+ *   upright                86                  -4             0
+ *   camera 45 deg up       45                 -45           +45
+ *
+ * Beta climbs to 90 and comes back down, so aiming above the horizon is arithmetically
+ * indistinguishable from aiming the same angle below it, and the camera can never point
+ * at the sky -- the entire purpose of the screen that calls this.
+ *
+ * Gravity has no such limit. Whatever a platform calls its angles, down is down.
+ *
+ * THERE IS DELIBERATELY NO FALLBACK TO THE REPORTED ANGLE
+ * An earlier version used it when gravity was unavailable. That is a fallback onto a
+ * computation now known to be wrong on one of the two platforms, which would not fail
+ * visibly -- it would point confidently at the wrong patch of sky, which is the failure
+ * this whole module is written to avoid. Undefined instead, so the caller has to say it
+ * cannot aim rather than aim badly.
+ */
+export function orientationFrom(
+  trueHeading: number,
+  gravity: DeviceGravity | undefined,
+): DeviceOrientation | undefined {
+  if (gravity === undefined) return undefined;
+
+  const magnitude = Math.hypot(gravity.x, gravity.y, gravity.z);
+  if (magnitude < MIN_GRAVITY) return undefined;
 
   /*
-   * The back camera looks out of the phone's rear, so it points at the horizon when the
-   * phone is upright — beta of 90 — and straight up when the phone is lying on its
-   * face. Clamped rather than wrapped: past vertical the user is looking at the ground
-   * behind them, and every value there is equally useless, so pinning it at the zenith
-   * keeps the display still instead of flipping it end over end.
+   * World up, in the device axes. The back camera looks along -z, so its elevation
+   * above the horizon is the angle between -z and up: flat on its back the phone points
+   * at the ground and this gives -90, on its face it gives +90, and every attitude
+   * between is continuous with nothing to clamp.
    */
-  const pitch = Math.min(90, Math.max(-90, beta - 90));
+  const upX = gravity.x / magnitude;
+  const upY = gravity.y / magnitude;
+  const upZ = gravity.z / magnitude;
 
-  return { heading: trueHeading, pitch, roll: gamma };
+  return {
+    heading: trueHeading,
+    pitch: Math.asin(Math.min(1, Math.max(-1, -upZ))) / DEG,
+    /*
+     * Roll is where world up sits within the screen plane. Rolling the phone clockwise
+     * carries up toward the left of the screen, hence the negated x. Verified on a
+     * device: tilting clockwise moves the marker anticlockwise, as it should.
+     *
+     * Degenerate at the zenith, unavoidably: with the camera axis parallel to gravity
+     * there is no component of up left in the screen plane, and rotation about that
+     * axis is a question only the compass can answer. It matters less than it sounds,
+     * because a circle drawn around a point does not change shape when it rotates.
+     */
+    roll: Math.atan2(-upX, upY) / DEG,
+  };
+}
+
+/**
+ * One step of an exponential low-pass filter over the gravity vector.
+ *
+ * WHY THE RAW READING CANNOT BE USED DIRECTLY
+ * An accelerometer measures gravity plus whatever acceleration the hand is applying,
+ * and it cannot separate them. Swept quickly across the sky, a phone reports a "down"
+ * that is tilted by its own motion, so the overlay slides away from the sky and comes
+ * back when the movement stops. Averaging over a short window rejects that, because
+ * hand movement changes sign constantly while gravity does not.
+ *
+ * The cost is lag: during a fast sweep the marker trails slightly behind. That is the
+ * right trade for this feature, which is used by pointing and then holding still, and
+ * a marker that lags briefly is far less confusing than one that swings.
+ *
+ * @param factor 0 to 1. Higher follows the sensor faster and filters less.
+ */
+export function smoothGravity(
+  previous: DeviceGravity | undefined,
+  next: DeviceGravity,
+  factor: number,
+): DeviceGravity {
+  if (previous === undefined) return next;
+  return {
+    x: previous.x + (next.x - previous.x) * factor,
+    y: previous.y + (next.y - previous.y) * factor,
+    z: previous.z + (next.z - previous.z) * factor,
+  };
+}
+
+/**
+ * The same filter for a bearing, which has to be done the long way round.
+ *
+ * Averaging 359 and 1 arithmetically gives 180 -- the exact opposite direction. The
+ * step is taken along the shorter arc between the two instead, then wrapped back into
+ * 0 to 360, so north is not a discontinuity the overlay lurches across.
+ */
+export function smoothBearing(
+  previous: number | undefined,
+  next: number,
+  factor: number,
+): number {
+  if (previous === undefined) return next;
+  return (((previous + bearingDelta(previous, next) * factor) % 360) + 360) % 360;
 }
 
 export type Sighting =
