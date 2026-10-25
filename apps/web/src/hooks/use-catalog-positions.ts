@@ -38,7 +38,17 @@ export const POSITION_FIELDS = 7;
  * result was 6 propagations in 12 seconds at irregular gaps up to 4 s, which the
  * renderer papered over by dead reckoning until it hit its extrapolation clamp and
  * then snapped. See e2e/tick-cadence.spec.ts, which fails if that returns.
+ *
+ * CATALOG REFRESH
+ * The one timer here re-fetches the catalog, not positions. Elements are ingested every
+ * three hours, and a tab left open on the globe would otherwise propagate the set it
+ * loaded first for as long as it stays open -- drifting further from the published
+ * elements with no reload to fix it. Hidden tabs skip the refetch and catch up when
+ * they are shown again, so a backgrounded tab does not download 7 MB an hour.
  */
+
+/** How often an open page re-fetches the catalog. Ingestion runs every 3 hours. */
+export const CATALOG_REFRESH_MS = 60 * 60 * 1000;
 
 export type CatalogTickState =
   | { readonly status: "loading" }
@@ -115,7 +125,8 @@ export function useCatalogPositions(time: number): CatalogWorker {
     status: "idle",
   });
 
-  // Worker lifecycle: created once, fed the catalog once.
+  // Worker lifecycle: created once, fed the catalog on mount and then every
+  // CATALOG_REFRESH_MS while visible.
   useEffect(() => {
     let disposed = false;
 
@@ -136,6 +147,7 @@ export function useCatalogPositions(time: number): CatalogWorker {
             fromCache: boolean;
           }
         | { type: "error"; message: string }
+        | { type: "refreshFailed"; message: string }
         | { type: "positions"; buffer: ArrayBuffer; time: number }
         | VisibleTonightResult;
 
@@ -167,6 +179,9 @@ export function useCatalogPositions(time: number): CatalogWorker {
         );
       } else if (message.type === "error") {
         setState({ status: "failed", message: message.message });
+      } else if (message.type === "refreshFailed") {
+        // The loaded catalog stays on screen; its epochs already say how old it is.
+        console.warn(`Catalog refresh failed, keeping the loaded elements: ${message.message}`);
       } else if (message.type === "positions") {
         setState({
           status: "ready",
@@ -182,13 +197,24 @@ export function useCatalogPositions(time: number): CatalogWorker {
     });
 
     worker.postMessage({ type: "init", url: catalogElementsUrl() });
+    let lastFetch = Date.now();
+
+    const refresh = () => {
+      if (document.hidden || Date.now() - lastFetch < CATALOG_REFRESH_MS) return;
+      lastFetch = Date.now();
+      worker.postMessage({ type: "init", url: catalogElementsUrl(), refresh: true });
+    };
+    const timer = setInterval(refresh, CATALOG_REFRESH_MS);
+    document.addEventListener("visibilitychange", refresh);
 
     return () => {
       disposed = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
       worker.terminate();
       workerRef.current = null;
     };
-    // Deliberately mount-once: the worker and the fetched catalog outlive time changes.
+    // Deliberately mount-once: the worker outlives time changes, and refreshes itself.
   }, []);
 
   // Propagate: one tick per distinct instant, plus one as soon as the worker is ready.

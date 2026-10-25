@@ -47,6 +47,12 @@ import type {
  *       A record that fails to parse is dropped (not fatal to the rest), and the
  *       worker reports how many, since a silent drop of thousands of objects should
  *       never be invisible to the caller.
+ *   IN  { type: "init", url: string, refresh: true }
+ *       The same fetch, repeated while the page stays open so a long-lived tab does
+ *       not keep propagating the elements it happened to load first. The new catalog
+ *       replaces the old one only once it has fully parsed. A failed refresh is NOT
+ *       fatal: the worker keeps the catalog it has, whose epochs already say how old
+ *       it is, and reports { type: "refreshFailed", message } instead of "error".
  *   IN  { type: "tick", time: number }
  *       Epoch milliseconds to propagate to. Sent by the main thread's render loop or
  *       by the timeline when scrubbing.
@@ -79,6 +85,8 @@ const NOT_OK = 0;
 interface InitMessage {
   readonly type: "init";
   readonly url: string;
+  /** A re-fetch while a catalog is already loaded; see the protocol above. */
+  readonly refresh?: boolean;
 }
 
 interface TickMessage {
@@ -133,7 +141,7 @@ async function handleInit(message: InitMessage): Promise<void> {
     fromCache = response.headers.get("x-orbitwatch-cached") === "1";
   } catch (error) {
     postMessage({
-      type: "error",
+      type: message.refresh === true ? "refreshFailed" : "error",
       message: error instanceof Error ? error.message : String(error),
     });
     return;

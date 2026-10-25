@@ -1,6 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
+  "cacheMaxSize": "2GB",
+  "cacheMaxAge": "14d",
   "globalEnv": [
     "NODE_ENV"
   ],
@@ -16,7 +18,8 @@
       "outputs": [
         "dist/**",
         ".next/**",
-        "!.next/cache/**"
+        "!.next/cache/**",
+        "!.next/dev/**"
       ]
     },
     "typecheck": {
